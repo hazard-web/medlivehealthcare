@@ -15,9 +15,13 @@ const jakarta = Plus_Jakarta_Sans({
 });
 
 export const metadata: Metadata = {
-  title: "MedLive Healthcare | Home Patient Care Essentials India",
+  title: "MedLive Healthcare",
   description:
     "Shop gloves, adult diapers, hygiene wipes, monitors and medical devices online in India. Best prices in ₹ with free pan-India shipping.",
+  icons: {
+    icon: [{ url: "/icon.svg", type: "image/svg+xml" }],
+    apple: [{ url: "/apple-icon.svg", type: "image/svg+xml" }],
+  },
 };
 
 export default function RootLayout({

@@ -53,16 +53,30 @@ Test payment details: [Razorpay test docs](https://razorpay.com/docs/payments/pa
 
 - Next.js 16 (App Router)
 - React 19, TypeScript, Tailwind CSS 4
-- Server-side JSON store (`data/medlive.json`, gitignored — created at runtime)
+- Server-side store: **Supabase PostgreSQL** (or local `data/medlive.json` fallback)
 - bcrypt + JWT sessions, Razorpay checkout
 
 ## Environment variables
 
 | Variable | Required | Description |
 |----------|----------|-------------|
+| `DATABASE_URL` | Yes (production) | Supabase PostgreSQL connection string (pooler, port 6543) |
 | `NEXT_PUBLIC_RAZORPAY_KEY_ID` | For online pay | Razorpay key ID |
 | `RAZORPAY_KEY_SECRET` | For online pay | Razorpay secret (server only) |
 | `AUTH_SECRET` | Yes | Session JWT signing secret |
 | `NEXT_PUBLIC_APP_URL` | Production | Public site URL for reset emails |
+
+Without `DATABASE_URL`, the app falls back to `data/medlive.json` locally (not for production).
+
+## Supabase setup
+
+1. Create a project at [supabase.com](https://supabase.com)
+2. Open **SQL Editor** and run the script in [`supabase/schema.sql`](supabase/schema.sql)
+3. Copy the **Connection string** (URI) from **Settings → Database** — use the pooler host on port **6543**
+4. Add to `.env.local` (and Vercel / Render):
+
+```env
+DATABASE_URL=postgresql://postgres.xxxx:[YOUR-PASSWORD]@aws-1-ap-southeast-2.pooler.supabase.com:6543/postgres
+```
 
 See `.env.example` for a safe template. **Do not commit `.env.local` or real API keys.**

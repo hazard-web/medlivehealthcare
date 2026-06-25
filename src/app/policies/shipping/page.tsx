@@ -1,9 +1,5 @@
 import PolicyLayout from "@/components/PolicyLayout";
 
-export const metadata = {
-  title: "Shipping Policy | MedLive Healthcare",
-};
-
 export default function ShippingPolicyPage() {
   return (
     <PolicyLayout title="Shipping Policy" updated="25 June 2026">
