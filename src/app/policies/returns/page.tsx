@@ -1,9 +1,5 @@
 import PolicyLayout from "@/components/PolicyLayout";
 
-export const metadata = {
-  title: "Return & Refund Policy | MedLive Healthcare",
-};
-
 export default function ReturnsPolicyPage() {
   return (
     <PolicyLayout title="Return & Refund Policy" updated="25 June 2026">

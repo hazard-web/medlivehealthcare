@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 180" role="img" aria-label="MedLive Healthcare">
+  <defs>
+    <linearGradient id="ml" x1="20" y1="20" x2="160" y2="160" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#14b8a6" />
+      <stop offset="1" stop-color="#0f766e" />
+    </linearGradient>
+  </defs>
+  <rect width="180" height="180" rx="40" fill="url(#ml)" />
+  <g transform="translate(30 30)" fill="none" stroke="#fff" stroke-width="10" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z" transform="scale(5)" />
+    <path d="M3.22 12H9.5l.5-1 2 4.5 2-7 1.5 3.5h5.27" transform="scale(5)" />
+  </g>
+</svg>

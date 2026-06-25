@@ -1,9 +1,5 @@
 import PolicyLayout from "@/components/PolicyLayout";
 
-export const metadata = {
-  title: "Privacy Policy | MedLive Healthcare",
-};
-
 export default function PrivacyPolicyPage() {
   return (
     <PolicyLayout title="Privacy Policy" updated="25 June 2026">

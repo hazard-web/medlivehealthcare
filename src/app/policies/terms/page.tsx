@@ -1,9 +1,5 @@
 import PolicyLayout from "@/components/PolicyLayout";
 
-export const metadata = {
-  title: "Terms of Service | MedLive Healthcare",
-};
-
 export default function TermsPage() {
   return (
     <PolicyLayout title="Terms of Service" updated="25 June 2026">

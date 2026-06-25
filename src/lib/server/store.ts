@@ -1,6 +1,8 @@
 import { promises as fs } from "fs";
 import path from "path";
 import { SavedAddress } from "@/lib/types";
+import { isSupabaseConfigured } from "./supabase";
+import { persistStoreToSupabase, readStoreFromSupabase } from "./supabase-store";
 
 export interface StoredUser {
   id: string;
@@ -149,6 +151,9 @@ function queueWrite(task: () => Promise<void>): Promise<void> {
 }
 
 export async function readStore(): Promise<MedLiveStore> {
+  if (isSupabaseConfigured()) {
+    return readStoreFromSupabase();
+  }
   try {
     const raw = await fs.readFile(STORE_PATH, "utf-8");
     return { ...DEFAULT_STORE, ...JSON.parse(raw) } as MedLiveStore;
@@ -157,9 +162,17 @@ export async function readStore(): Promise<MedLiveStore> {
   }
 }
 
-export async function writeStore(store: MedLiveStore): Promise<void> {
+async function writeStoreLocal(store: MedLiveStore): Promise<void> {
+  if (isSupabaseConfigured()) {
+    await persistStoreToSupabase(store);
+    return;
+  }
   await fs.mkdir(DATA_DIR, { recursive: true });
   await fs.writeFile(STORE_PATH, JSON.stringify(store, null, 2), "utf-8");
+}
+
+export async function writeStore(store: MedLiveStore): Promise<void> {
+  await writeStoreLocal(store);
 }
 
 export async function mutateStore<T>(
