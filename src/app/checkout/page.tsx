@@ -17,7 +17,7 @@ import {
   formToSavedAddress,
   ShippingFormData,
 } from "@/lib/addresses";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, parseApiJson } from "@/lib/api";
 import { SavedAddress } from "@/lib/types";
 import { cn } from "@/lib/cn";
 
@@ -91,9 +91,9 @@ export default function CheckoutPage() {
         gstin: gstin.trim() || undefined,
       }),
     });
-    const data = await res.json();
+    const data = await parseApiJson<{ error?: string; token: string; total: number }>(res);
     if (!res.ok) throw new Error(data.error || "Checkout validation failed");
-    return data as { token: string; total: number };
+    return data;
   };
 
   const placeOrder = async (input: {
@@ -121,7 +121,7 @@ export default function CheckoutPage() {
       }),
     });
 
-    const data = await res.json();
+    const data = await parseApiJson<{ error?: string; order: { id: string } }>(res);
     if (!res.ok) throw new Error(data.error || "Could not place order");
 
     sessionStorage.removeItem("medlive_checkout_shipping");
