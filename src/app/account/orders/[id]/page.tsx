@@ -14,6 +14,7 @@ import {
   Truck,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import { apiUrl } from "@/lib/api";
 import { formatPrice } from "@/lib/products";
 import {
   canReturn,
@@ -110,7 +111,7 @@ export default function OrderDetailPage() {
           </p>
         </div>
         <a
-          href={`/api/invoice/${order.id}`}
+          href={apiUrl(`/api/invoice/${order.id}`)}
           target="_blank"
           rel="noopener noreferrer"
           className="btn-secondary px-4 py-2.5 text-sm"

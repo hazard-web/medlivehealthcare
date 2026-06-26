@@ -9,6 +9,7 @@ import {
   ReactNode,
 } from "react";
 import { User, SavedAddress } from "@/lib/types";
+import { apiFetch } from "@/lib/api";
 
 interface AuthContextType {
   user: User | null;
@@ -58,7 +59,7 @@ function saveUsers(users: StoredUser[]) {
 
 async function fetchSessionUser(): Promise<User | null> {
   try {
-    const res = await fetch("/api/auth/me", { credentials: "include" });
+    const res = await apiFetch("/api/auth/me");
     if (!res.ok) return null;
     const data = await res.json();
     return data.user ?? null;
@@ -100,10 +101,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       phone?: string;
     }) => {
       try {
-        const res = await fetch("/api/auth/signup", {
+        const res = await apiFetch("/api/auth/signup", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          credentials: "include",
           body: JSON.stringify(data),
         });
         const json = await res.json();
@@ -137,10 +137,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signIn = useCallback(async (email: string, password: string) => {
     try {
-      const res = await fetch("/api/auth/signin", {
+      const res = await apiFetch("/api/auth/signin", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        credentials: "include",
         body: JSON.stringify({ email, password }),
       });
       const json = await res.json();
@@ -163,7 +162,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const sendOtp = useCallback(async (phone: string) => {
-    const res = await fetch("/api/auth/otp/send", {
+    const res = await apiFetch("/api/auth/otp/send", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ phone }),
@@ -174,10 +173,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signInWithOtp = useCallback(async (phone: string, code: string, name?: string) => {
-    const res = await fetch("/api/auth/otp/verify", {
+    const res = await apiFetch("/api/auth/otp/verify", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      credentials: "include",
       body: JSON.stringify({ phone, code, name }),
     });
     const json = await res.json();
@@ -189,7 +187,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = useCallback(async () => {
     try {
-      await fetch("/api/auth/me", { method: "DELETE", credentials: "include" });
+      await apiFetch("/api/auth/me", { method: "DELETE" });
     } catch {
       /* ignore */
     }
@@ -231,10 +229,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser({ ...user, savedAddresses: merged, phone: saved.phone });
 
       try {
-        await fetch("/api/auth/address", {
+        await apiFetch("/api/auth/address", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          credentials: "include",
           body: JSON.stringify({ address: saved, makeDefault }),
         });
       } catch {

@@ -17,6 +17,7 @@ import {
   formToSavedAddress,
   ShippingFormData,
 } from "@/lib/addresses";
+import { apiFetch } from "@/lib/api";
 import { SavedAddress } from "@/lib/types";
 import { cn } from "@/lib/cn";
 
@@ -80,10 +81,9 @@ export default function CheckoutPage() {
     }));
 
   const validateCheckout = async (form: ShippingFormData) => {
-    const res = await fetch("/api/checkout/validate", {
+    const res = await apiFetch("/api/checkout/validate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      credentials: "include",
       body: JSON.stringify({
         lines: buildCheckoutLines(),
         promoCode: appliedPromo?.code,
@@ -108,10 +108,9 @@ export default function CheckoutPage() {
 
     const addressSnapshot = formToSavedAddress(shippingForm, { isDefault: false });
 
-    const res = await fetch("/api/orders", {
+    const res = await apiFetch("/api/orders", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      credentials: "include",
       body: JSON.stringify({
         checkoutToken,
         paymentMethod: input.paymentMethod,

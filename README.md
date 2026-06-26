@@ -80,3 +80,33 @@ DATABASE_URL=postgresql://postgres.xxxx:[YOUR-PASSWORD]@aws-1-ap-southeast-2.poo
 ```
 
 See `.env.example` for a safe template. **Do not commit `.env.local` or real API keys.**
+
+## Deployment (Vercel + Render)
+
+The app supports a **split deployment**: UI on **Vercel**, API + database on **Render**.
+
+### Vercel (frontend)
+
+| Variable | Example |
+|----------|---------|
+| `NEXT_PUBLIC_API_URL` | `https://your-backend.onrender.com` |
+| `NEXT_PUBLIC_APP_URL` | `https://your-frontend.vercel.app` |
+| `NEXT_PUBLIC_RAZORPAY_KEY_ID` | `rzp_test_...` |
+
+Do **not** add `DATABASE_URL` or `AUTH_SECRET` on Vercel.
+
+### Render (backend)
+
+| Variable | Example |
+|----------|---------|
+| `DATABASE_URL` | Supabase PostgreSQL pooler URI |
+| `AUTH_SECRET` | `openssl rand -base64 32` |
+| `RAZORPAY_KEY_SECRET` | Razorpay secret |
+| `NEXT_PUBLIC_RAZORPAY_KEY_ID` | `rzp_test_...` |
+| `FRONTEND_URL` | `https://your-frontend.vercel.app` |
+| `NEXT_PUBLIC_APP_URL` | `https://your-frontend.vercel.app` (password reset links) |
+
+**Build command:** `npm install && npm run build`  
+**Start command:** `npm start`
+
+Leave `NEXT_PUBLIC_API_URL` **empty** locally to run as a single app on `localhost:3000`.

@@ -14,6 +14,7 @@ import {
   X,
   CheckCircle2,
 } from "lucide-react";
+import { apiFetch } from "@/lib/api";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import {
@@ -57,7 +58,7 @@ function ResetPasswordForm() {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`/api/auth/reset-password?token=${encodeURIComponent(token)}`);
+        const res = await apiFetch(`/api/auth/reset-password?token=${encodeURIComponent(token)}`);
         const data = await res.json();
         if (cancelled) return;
         if (!res.ok) {
@@ -92,7 +93,7 @@ function ResetPasswordForm() {
 
     setLoading(true);
     try {
-      const res = await fetch("/api/auth/reset-password", {
+      const res = await apiFetch("/api/auth/reset-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token, password }),
