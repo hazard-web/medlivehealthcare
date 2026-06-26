@@ -1,3 +1,4 @@
+import { normalizeSavedAddresses } from "@/lib/addresses";
 import { SavedAddress } from "@/lib/types";
 import { getSql } from "./db";
 import type {
@@ -119,7 +120,7 @@ function rowToUser(row: UserRow): StoredUser {
     passwordHash: row.password_hash,
     isGuest: row.is_guest,
     gstin: row.gstin,
-    savedAddresses: row.saved_addresses ?? [],
+    savedAddresses: normalizeSavedAddresses(row.saved_addresses),
     createdAt: row.created_at,
   };
 }

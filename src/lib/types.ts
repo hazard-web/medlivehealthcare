@@ -19,6 +19,8 @@ export interface CartItem {
   product: Product;
   quantity: number;
   variantKey?: string;
+  /** True when this line was added before sign-in and merged into the account cart. */
+  fromGuestSession?: boolean;
 }
 
 export type AddressLabel = "Home" | "Work" | "Other";

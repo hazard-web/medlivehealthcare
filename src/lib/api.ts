@@ -1,5 +1,9 @@
-/** Backend base URL on Render. Empty = same-origin (local monolith). */
+/** Backend base URL on Render. Empty = same-origin (local monolith or Vercel with API env vars). */
 export function getApiBase(): string {
+  // Prefer same-origin API on Vercel when explicitly disabled (fixes auth cookies).
+  if (process.env.NEXT_PUBLIC_USE_SAME_ORIGIN_API === "true") {
+    return "";
+  }
   return process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") ?? "";
 }
 
