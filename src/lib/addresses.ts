@@ -85,6 +85,23 @@ export function formatSavedAddress(address: SavedAddress): string {
   return parts.join(", ");
 }
 
+/** Coerce DB/API values into a SavedAddress[] (handles null, strings, bad shapes). */
+export function normalizeSavedAddresses(value: unknown): SavedAddress[] {
+  if (!value) return [];
+  if (typeof value === "string") {
+    try {
+      return normalizeSavedAddresses(JSON.parse(value));
+    } catch {
+      return [];
+    }
+  }
+  if (!Array.isArray(value)) return [];
+  return value.filter(
+    (item): item is SavedAddress =>
+      item != null && typeof item === "object" && typeof (item as SavedAddress).id === "string"
+  );
+}
+
 export function legacyAddressFromForm(form: ShippingFormData): {
   address: string;
   city: string;

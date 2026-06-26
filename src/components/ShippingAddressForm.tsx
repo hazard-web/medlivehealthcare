@@ -9,6 +9,7 @@ import {
   emptyShippingForm,
   formToSavedAddress,
   legacyAddressFromForm,
+  normalizeSavedAddresses,
   savedAddressToForm,
   ShippingFormData,
 } from "@/lib/addresses";
@@ -46,7 +47,7 @@ export default function ShippingAddressForm({
   isGuest = false,
   isSubmitting = false,
 }: ShippingAddressFormProps) {
-  const savedAddresses = user.savedAddresses ?? [];
+  const savedAddresses = normalizeSavedAddresses(user.savedAddresses);
   const defaultSaved = savedAddresses.find((a) => a.isDefault) ?? savedAddresses[0];
 
   const [selectedId, setSelectedId] = useState<string | "new">(

@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import bcrypt from "bcryptjs";
 import { SignJWT, jwtVerify } from "jose";
+import { normalizeSavedAddresses } from "@/lib/addresses";
 import { SavedAddress, User } from "@/lib/types";
 import { isDatabaseConfigured } from "./db";
 import {
@@ -38,7 +39,7 @@ export function toPublicUser(user: StoredUser): User {
     name: user.name,
     email: user.email ?? "",
     phone: user.phone ?? undefined,
-    savedAddresses: user.savedAddresses,
+    savedAddresses: normalizeSavedAddresses(user.savedAddresses),
   };
 }
 
@@ -291,7 +292,7 @@ export async function saveUserAddress(
     const user = await dbFindUserById(userId);
     if (!user) return null;
 
-    const existing = user.savedAddresses ?? [];
+    const existing = normalizeSavedAddresses(user.savedAddresses);
     const withoutDup = existing.filter((a) => a.id !== address.id);
     const isDefault = makeDefault || address.isDefault || withoutDup.length === 0;
     const saved: SavedAddress = { ...address, isDefault };
@@ -308,7 +309,7 @@ export async function saveUserAddress(
     const user = store.users.find((u) => u.id === userId);
     if (!user) return null;
 
-    const existing = user.savedAddresses ?? [];
+    const existing = normalizeSavedAddresses(user.savedAddresses);
     const withoutDup = existing.filter((a) => a.id !== address.id);
     const isDefault = makeDefault || address.isDefault || withoutDup.length === 0;
     const saved: SavedAddress = { ...address, isDefault };

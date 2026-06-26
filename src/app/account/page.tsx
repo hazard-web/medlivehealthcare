@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { User, Mail, Phone, MapPin, Package, Loader2 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
-import { formatSavedAddress } from "@/lib/addresses";
+import { formatSavedAddress, normalizeSavedAddresses } from "@/lib/addresses";
 import { fetchOrdersFromApi } from "@/lib/orders-api";
 import OrderHistoryCard from "@/components/OrderHistoryCard";
 import { StoredOrder } from "@/lib/orders";
@@ -36,6 +36,8 @@ export default function AccountPage() {
     );
   }
 
+  const savedAddresses = normalizeSavedAddresses(user.savedAddresses);
+
   return (
     <div className="container-app py-10 sm:py-12">
       <h1 className="section-title mb-8">My Account</h1>
@@ -63,14 +65,14 @@ export default function AccountPage() {
         </dl>
       </div>
 
-      {user.savedAddresses && user.savedAddresses.length > 0 ? (
+      {savedAddresses.length > 0 ? (
         <div className="mb-8 card p-6">
           <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold text-slate-900">
             <MapPin className="h-5 w-5 text-primary-600" />
             Saved addresses
           </h2>
           <ul className="space-y-3">
-            {user.savedAddresses.map((address) => (
+            {savedAddresses.map((address) => (
               <li
                 key={address.id}
                 className="rounded-xl border border-border bg-surface-muted/50 p-4 text-sm"
