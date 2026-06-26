@@ -5,6 +5,14 @@ import { parseCartLineId } from "@/lib/cart-line";
 import { getProductCompliance } from "@/lib/product-compliance";
 import { resolveCatalogUnitPrice, validateLineUnitPrice, acceptableUnitPrices } from "@/lib/cart-pricing";
 import { checkPincode } from "@/lib/pincode";
+import { isDatabaseConfigured } from "./db";
+import {
+  dbConsumeCheckoutToken,
+  dbGetCheckoutToken,
+  dbInsertCheckoutToken,
+  dbInsertOrder,
+  dbNextOrderAndInvoiceNumbers,
+} from "./supabase-store";
 import { mutateStore, nextInvoiceNumber, nextOrderNumber, purgeExpired, StoredOrder, StoredOrderItem } from "./store";
 
 export interface CartLineInput {
@@ -125,27 +133,33 @@ export async function createCheckoutToken(input: {
   const token = crypto.randomUUID();
   const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
 
-  await mutateStore((store) => {
-    purgeExpired(store);
-    store.checkoutTokens.push({
-      token,
-      userId: input.userId ?? null,
-      guestPhone: input.guestPhone ?? null,
-      items: itemsResult,
-      subtotal: totals.subtotal,
-      promoCode,
-      promoDiscount: totals.promoDiscount,
-      shipping: totals.shipping,
-      tax: gst.tax,
-      cgst: gst.cgst,
-      sgst: gst.sgst,
-      igst: gst.igst,
-      total: totals.total,
-      gstin: input.gstin?.trim().toUpperCase() || null,
-      shippingState: input.shippingState,
-      expiresAt,
+  const checkoutToken = {
+    token,
+    userId: input.userId ?? null,
+    guestPhone: input.guestPhone ?? null,
+    items: itemsResult,
+    subtotal: totals.subtotal,
+    promoCode,
+    promoDiscount: totals.promoDiscount,
+    shipping: totals.shipping,
+    tax: gst.tax,
+    cgst: gst.cgst,
+    sgst: gst.sgst,
+    igst: gst.igst,
+    total: totals.total,
+    gstin: input.gstin?.trim().toUpperCase() || null,
+    shippingState: input.shippingState,
+    expiresAt,
+  };
+
+  if (isDatabaseConfigured()) {
+    await dbInsertCheckoutToken(checkoutToken);
+  } else {
+    await mutateStore((store) => {
+      purgeExpired(store);
+      store.checkoutTokens.push(checkoutToken);
     });
-  });
+  }
 
   return {
     items: itemsResult,
@@ -164,6 +178,10 @@ export async function createCheckoutToken(input: {
 }
 
 export async function consumeCheckoutToken(token: string) {
+  if (isDatabaseConfigured()) {
+    return dbConsumeCheckoutToken(token);
+  }
+
   return mutateStore((store) => {
     purgeExpired(store);
     const idx = store.checkoutTokens.findIndex((t) => t.token === token);
@@ -175,6 +193,10 @@ export async function consumeCheckoutToken(token: string) {
 }
 
 export async function getCheckoutToken(token: string) {
+  if (isDatabaseConfigured()) {
+    return dbGetCheckoutToken(token);
+  }
+
   const store = await mutateStore((s) => s);
   purgeExpired(store);
   const checkout = store.checkoutTokens.find((t) => t.token === token);
@@ -203,6 +225,49 @@ export async function createOrderFromCheckout(input: {
   if (!checkout) return { error: "Checkout session expired. Please try again." };
 
   const { createShipment } = await import("@/lib/logistics");
+
+  if (isDatabaseConfigured()) {
+    const { orderNumber, invoiceNumber } = await dbNextOrderAndInvoiceNumbers();
+    const shipment = createShipment(
+      orderNumber,
+      input.pincode,
+      pinCheck.city ?? input.shippingAddress.city
+    );
+
+    const order: StoredOrder = {
+      id: `ord_${crypto.randomUUID()}`,
+      orderNumber,
+      userId: input.userId ?? checkout.userId,
+      guestPhone: input.guestPhone ?? checkout.guestPhone,
+      guestEmail: input.guestEmail ?? null,
+      guestName: input.guestName ?? null,
+      items: checkout.items,
+      subtotal: checkout.subtotal,
+      promoCode: checkout.promoCode,
+      promoDiscount: checkout.promoDiscount,
+      shipping: checkout.shipping,
+      tax: checkout.tax,
+      cgst: checkout.cgst,
+      sgst: checkout.sgst,
+      igst: checkout.igst,
+      total: checkout.total,
+      paymentMethod: input.paymentMethod,
+      paymentStatus: input.paymentMethod === "cod" ? "pending" : "paid",
+      paymentId: input.paymentId ?? null,
+      razorpayOrderId: input.razorpayOrderId ?? null,
+      status: input.paymentMethod === "cod" ? "pending" : "paid",
+      shippingAddress: input.shippingAddress,
+      gstin: checkout.gstin,
+      invoiceNumber,
+      pincode: input.pincode,
+      shipment,
+      returnRequest: null,
+      createdAt: new Date().toISOString(),
+    };
+
+    await dbInsertOrder(order);
+    return order;
+  }
 
   return mutateStore((store) => {
     const orderNumber = nextOrderNumber(store);

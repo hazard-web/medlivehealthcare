@@ -18,13 +18,13 @@ import {
   ShippingFormData,
 } from "@/lib/addresses";
 import { apiFetch, parseApiJson } from "@/lib/api";
-import { SavedAddress } from "@/lib/types";
+import { SavedAddress, User } from "@/lib/types";
 import { cn } from "@/lib/cn";
 
 type PaymentMethod = "razorpay" | "cod";
 
 export default function CheckoutPage() {
-  const { user, isLoading, saveAddress } = useAuth();
+  const { user, isLoading, updateProfile } = useAuth();
   const {
     items,
     clearCart,
@@ -48,6 +48,7 @@ export default function CheckoutPage() {
   const [gstin, setGstin] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("razorpay");
   const [placingCod, setPlacingCod] = useState(false);
+  const [shippingSubmitting, setShippingSubmitting] = useState(false);
 
   useEffect(() => {
     if (!isLoading && !user) {
@@ -80,18 +81,36 @@ export default function CheckoutPage() {
       unitPrice: resolveCartLineUnitPrice(product.id, variantKey, quantity, product.price),
     }));
 
-  const validateCheckout = async (form: ShippingFormData) => {
+  const validateCheckout = async (
+    form: ShippingFormData,
+    options: { saveToAccount: boolean; makeDefault: boolean; addressId?: string }
+  ) => {
+    const payload: Record<string, unknown> = {
+      lines: buildCheckoutLines(),
+      promoCode: appliedPromo?.code,
+      shippingState: form.state,
+      gstin: gstin.trim() || undefined,
+    };
+
+    if (options.saveToAccount) {
+      payload.saveAddress = formToSavedAddress(form, {
+        id: options.addressId,
+        isDefault: options.makeDefault,
+      });
+      payload.makeDefault = options.makeDefault;
+    }
+
     const res = await apiFetch("/api/checkout/validate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        lines: buildCheckoutLines(),
-        promoCode: appliedPromo?.code,
-        shippingState: form.state,
-        gstin: gstin.trim() || undefined,
-      }),
+      body: JSON.stringify(payload),
     });
-    const data = await parseApiJson<{ error?: string; token: string; total: number }>(res);
+    const data = await parseApiJson<{
+      error?: string;
+      token: string;
+      total: number;
+      user?: User;
+    }>(res);
     if (!res.ok) throw new Error(data.error || "Checkout validation failed");
     return data;
   };
@@ -142,28 +161,25 @@ export default function CheckoutPage() {
     }
 
     setPincode(form.pincode);
+    setShippingSubmitting(true);
 
     try {
-      const validated = await validateCheckout(form);
+      const validated = await validateCheckout(form, options);
       setCheckoutToken(validated.token);
       setValidatedTotal(validated.total);
+      if (validated.user) {
+        updateProfile(validated.user);
+      }
+
+      setShipping(form);
+      setPaymentReceipt(`ml_${Date.now()}`);
+      sessionStorage.setItem("medlive_checkout_shipping", JSON.stringify(form));
+      setStep("payment");
     } catch (err) {
       setShippingError(err instanceof Error ? err.message : "Could not validate order");
-      return;
+    } finally {
+      setShippingSubmitting(false);
     }
-
-    if (options.saveToAccount) {
-      const saved = formToSavedAddress(form, {
-        id: options.addressId,
-        isDefault: options.makeDefault,
-      });
-      await saveAddress(saved, options.makeDefault);
-    }
-
-    setShipping(form);
-    setPaymentReceipt(`ml_${Date.now()}`);
-    sessionStorage.setItem("medlive_checkout_shipping", JSON.stringify(form));
-    setStep("payment");
   };
 
   const handleCodPlace = async () => {
@@ -248,6 +264,7 @@ export default function CheckoutPage() {
                 pincodeResult={pincodeResult}
                 onSubmit={handleShippingSubmit}
                 error={shippingError}
+                isSubmitting={shippingSubmitting}
               />
             </div>
           ) : (

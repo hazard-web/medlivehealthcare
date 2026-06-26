@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/server/auth";
+import { isDatabaseConfigured } from "@/lib/server/db";
+import { dbFindOrderByIdOrNumber, dbUpdateOrder } from "@/lib/server/supabase-store";
 import { mutateStore } from "@/lib/server/store";
 
 export async function GET(
@@ -8,8 +10,10 @@ export async function GET(
 ) {
   const { id } = await context.params;
   const sessionUser = await getSessionUser();
-  const store = await mutateStore((s) => s);
-  const order = store.orders.find((o) => o.id === id || o.orderNumber === id);
+
+  const order = isDatabaseConfigured()
+    ? await dbFindOrderByIdOrNumber(id)
+    : (await mutateStore((s) => s)).orders.find((o) => o.id === id || o.orderNumber === id);
 
   if (!order) {
     return NextResponse.json({ error: "Order not found" }, { status: 404 });
@@ -46,6 +50,40 @@ export async function POST(
 
   if (!body.productIds?.length || !body.reason) {
     return NextResponse.json({ error: "Return details are required." }, { status: 400 });
+  }
+
+  if (isDatabaseConfigured()) {
+    const order = await dbFindOrderByIdOrNumber(id);
+    if (!order || order.userId !== sessionUser.id) {
+      return NextResponse.json({ error: "Order not found" }, { status: 400 });
+    }
+    if (order.returnRequest) {
+      return NextResponse.json({ error: "Return already requested for this order." }, { status: 400 });
+    }
+
+    const returnableTotal = order.items
+      .filter((i) => body.productIds!.includes(i.productId))
+      .reduce((sum, i) => sum + i.lineTotal, 0);
+
+    const refundAmount =
+      Math.round(
+        (returnableTotal - (order.promoDiscount * returnableTotal) / order.subtotal) * 1.12 * 100
+      ) / 100;
+
+    order.returnRequest = {
+      id: `ret_${crypto.randomUUID()}`,
+      productIds: body.productIds!,
+      reason: body.reason!,
+      comments: body.comments,
+      refundMethod: order.paymentMethod === "cod" ? "cod_refund" : "original_payment",
+      status: "requested",
+      createdAt: new Date().toISOString(),
+      refundAmount,
+    };
+    order.status = "return_requested";
+    await dbUpdateOrder(order);
+
+    return NextResponse.json({ order, returnRequest: order.returnRequest });
   }
 
   const result = await mutateStore((store) => {

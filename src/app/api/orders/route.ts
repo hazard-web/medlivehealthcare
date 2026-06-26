@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/server/auth";
 import { createOrderFromCheckout } from "@/lib/server/checkout";
+import { isDatabaseConfigured } from "@/lib/server/db";
+import { dbFindOrdersByUserId } from "@/lib/server/supabase-store";
 import { mutateStore, StoredOrder } from "@/lib/server/store";
 import { SavedAddress } from "@/lib/types";
 
@@ -54,6 +56,11 @@ export async function GET() {
   const sessionUser = await getSessionUser();
   if (!sessionUser) {
     return NextResponse.json({ orders: [] });
+  }
+
+  if (isDatabaseConfigured()) {
+    const orders = await dbFindOrdersByUserId(sessionUser.id);
+    return NextResponse.json({ orders });
   }
 
   const store = await mutateStore((s) => s);

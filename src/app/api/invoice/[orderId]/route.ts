@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { buildGstInvoiceHtml } from "@/lib/gst-invoice";
 import { getSessionUser } from "@/lib/server/auth";
+import { isDatabaseConfigured } from "@/lib/server/db";
+import { dbFindOrderByIdOrNumber } from "@/lib/server/supabase-store";
 import { mutateStore } from "@/lib/server/store";
 
 export async function GET(
@@ -9,8 +11,12 @@ export async function GET(
 ) {
   const { orderId } = await context.params;
   const sessionUser = await getSessionUser();
-  const store = await mutateStore((s) => s);
-  const order = store.orders.find((o) => o.id === orderId || o.orderNumber === orderId);
+
+  const order = isDatabaseConfigured()
+    ? await dbFindOrderByIdOrNumber(orderId)
+    : (await mutateStore((s) => s)).orders.find(
+        (o) => o.id === orderId || o.orderNumber === orderId
+      );
 
   if (!order) {
     return NextResponse.json({ error: "Order not found" }, { status: 404 });

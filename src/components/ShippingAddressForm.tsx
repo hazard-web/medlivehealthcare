@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Home, MapPin, Briefcase, User } from "lucide-react";
+import { Home, MapPin, Briefcase, User, Loader2 } from "lucide-react";
 import { User as UserType } from "@/lib/types";
 import { PincodeCheckResult } from "@/lib/pincode";
 import PincodeChecker from "@/components/PincodeChecker";
@@ -27,6 +27,7 @@ interface ShippingAddressFormProps {
   ) => void;
   error?: string | null;
   isGuest?: boolean;
+  isSubmitting?: boolean;
 }
 
 const LABEL_OPTIONS = [
@@ -43,6 +44,7 @@ export default function ShippingAddressForm({
   onSubmit,
   error,
   isGuest = false,
+  isSubmitting = false,
 }: ShippingAddressFormProps) {
   const savedAddresses = user.savedAddresses ?? [];
   const defaultSaved = savedAddresses.find((a) => a.isDefault) ?? savedAddresses[0];
@@ -401,8 +403,19 @@ export default function ShippingAddressForm({
 
       {error && <p className="mt-4 text-sm font-medium text-red-600">{error}</p>}
 
-      <button type="submit" className="btn-primary mt-6 w-full py-3.5 text-sm">
-        Continue to Payment
+      <button
+        type="submit"
+        disabled={isSubmitting}
+        className="btn-primary mt-6 w-full py-3.5 text-sm disabled:opacity-70"
+      >
+        {isSubmitting ? (
+          <span className="inline-flex items-center justify-center gap-2">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Continuing…
+          </span>
+        ) : (
+          "Continue to Payment"
+        )}
       </button>
     </form>
   );
