@@ -21,7 +21,6 @@ import {
   estimatedDelivery,
   formatOrderDate,
   formatOrderShipping,
-  getOrderById,
   isCodOrder,
   paymentMethodLabel,
   paymentStatusDetail,
@@ -61,9 +60,6 @@ export default function OrderDetailPage() {
     fetchOrderByIdFromApi(orderId).then((apiOrder) => {
       if (apiOrder && (!apiOrder.userId || apiOrder.userId === user.id)) {
         setOrder(apiOrder as StoredOrder);
-      } else {
-        const found = getOrderById(orderId);
-        if (found && found.userId === user.id) setOrder(found);
       }
       setLoaded(true);
     });
@@ -274,6 +270,7 @@ export default function OrderDetailPage() {
                 openChat({
                   orderId: order.id,
                   topic: "I need help with this order",
+                  order,
                 })
               }
               className="flex w-full items-center justify-center gap-2 rounded-xl border border-border py-3 text-sm font-semibold text-slate-700 transition hover:bg-surface-muted"
