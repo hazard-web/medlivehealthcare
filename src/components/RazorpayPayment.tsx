@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertCircle, CreditCard, Loader2, Lock, Smartphone } from "lucide-react";
+import { apiFetch } from "@/lib/api";
 import { formatPrice } from "@/lib/products";
 import { razorpayCheckoutConfig } from "@/lib/razorpay-checkout";
 import { unlockPageScroll } from "@/lib/razorpay-scroll";
@@ -67,7 +68,7 @@ export default function RazorpayPayment({
         return;
       }
 
-      const orderRes = await fetch("/api/razorpay/order", {
+      const orderRes = await apiFetch("/api/razorpay/order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -103,7 +104,7 @@ export default function RazorpayPayment({
         theme: { color: "#0d9488" },
         handler: async (response) => {
           unlockPageScroll();
-          const verifyRes = await fetch("/api/razorpay/verify", {
+          const verifyRes = await apiFetch("/api/razorpay/verify", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(response),

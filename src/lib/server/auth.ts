@@ -59,10 +59,11 @@ export async function createSessionToken(userId: string): Promise<string> {
 
 export async function setSessionCookie(token: string): Promise<void> {
   const jar = await cookies();
+  const crossOrigin = Boolean(process.env.FRONTEND_URL?.trim());
   jar.set(SESSION_COOKIE, token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
+    secure: crossOrigin || process.env.NODE_ENV === "production",
+    sameSite: crossOrigin ? "none" : "lax",
     path: "/",
     maxAge: SESSION_DAYS * 24 * 60 * 60,
   });
@@ -249,7 +250,10 @@ export async function requestPasswordReset(email: string): Promise<{ success: tr
       expiresAt,
     });
 
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+    const baseUrl =
+      process.env.FRONTEND_URL?.split(",")[0]?.trim() ||
+      process.env.NEXT_PUBLIC_APP_URL ||
+      "http://localhost:3000";
     return `${baseUrl}/auth/reset-password?token=${token}`;
   });
 
