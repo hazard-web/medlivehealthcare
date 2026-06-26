@@ -1,6 +1,5 @@
-import crypto from "crypto";
 import { NextResponse } from "next/server";
-import { getRazorpayConfig } from "@/lib/razorpay";
+import { getRazorpayConfig, verifyRazorpaySignature } from "@/lib/razorpay";
 
 export async function POST(request: Request) {
   const config = getRazorpayConfig();
@@ -24,12 +23,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Missing payment fields" }, { status: 400 });
   }
 
-  const expected = crypto
-    .createHmac("sha256", config.keySecret)
-    .update(`${razorpay_order_id}|${razorpay_payment_id}`)
-    .digest("hex");
-
-  if (expected !== razorpay_signature) {
+  if (!verifyRazorpaySignature(razorpay_order_id, razorpay_payment_id, razorpay_signature)) {
     return NextResponse.json({ valid: false, error: "Invalid signature" }, { status: 400 });
   }
 

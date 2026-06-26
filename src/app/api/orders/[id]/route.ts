@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/server/auth";
 import { isDatabaseConfigured } from "@/lib/server/db";
+import { canAccessOrder } from "@/lib/server/order-access";
 import { dbFindOrderByIdOrNumber, dbUpdateOrder } from "@/lib/server/supabase-store";
 import { mutateStore } from "@/lib/server/store";
 
@@ -10,6 +11,9 @@ export async function GET(
 ) {
   const { id } = await context.params;
   const sessionUser = await getSessionUser();
+  if (!sessionUser) {
+    return NextResponse.json({ error: "Sign in required" }, { status: 401 });
+  }
 
   const order = isDatabaseConfigured()
     ? await dbFindOrderByIdOrNumber(id)
@@ -19,7 +23,7 @@ export async function GET(
     return NextResponse.json({ error: "Order not found" }, { status: 404 });
   }
 
-  if (sessionUser && order.userId !== sessionUser.id) {
+  if (!canAccessOrder(sessionUser, order)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

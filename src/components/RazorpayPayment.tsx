@@ -38,7 +38,7 @@ interface RazorpayPaymentProps {
   userEmail: string;
   userPhone?: string;
   receipt?: string;
-  onSuccess: (paymentId: string, razorpayOrderId: string) => void;
+  onSuccess: (paymentId: string, razorpayOrderId: string, razorpaySignature: string) => void;
 }
 
 export default function RazorpayPayment({
@@ -117,7 +117,7 @@ export default function RazorpayPayment({
             return;
           }
 
-          onSuccess(verifyData.paymentId, verifyData.orderId);
+          onSuccess(verifyData.paymentId, verifyData.orderId, response.razorpay_signature);
         },
         modal: {
           ondismiss: () => {

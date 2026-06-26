@@ -4,6 +4,7 @@ import { createOrderFromCheckout } from "@/lib/server/checkout";
 import { isDatabaseConfigured } from "@/lib/server/db";
 import { dbFindOrdersByUserId } from "@/lib/server/supabase-store";
 import { mutateStore, StoredOrder } from "@/lib/server/store";
+import { verifyRazorpaySignature } from "@/lib/razorpay";
 import { SavedAddress } from "@/lib/types";
 
 export async function POST(request: Request) {
@@ -16,6 +17,7 @@ export async function POST(request: Request) {
     guestEmail?: string;
     paymentId?: string;
     razorpayOrderId?: string;
+    razorpaySignature?: string;
     pincode?: string;
   };
 
@@ -31,6 +33,16 @@ export async function POST(request: Request) {
 
   const paymentMethod = body.paymentMethod ?? "razorpay";
   const sessionUser = await getSessionUser();
+
+  if (paymentMethod === "razorpay") {
+    const { paymentId, razorpayOrderId, razorpaySignature } = body;
+    if (!paymentId || !razorpayOrderId || !razorpaySignature) {
+      return NextResponse.json({ error: "Payment verification is required." }, { status: 400 });
+    }
+    if (!verifyRazorpaySignature(razorpayOrderId, paymentId, razorpaySignature)) {
+      return NextResponse.json({ error: "Invalid payment signature." }, { status: 400 });
+    }
+  }
 
   const result = await createOrderFromCheckout({
     checkoutToken: body.checkoutToken,
