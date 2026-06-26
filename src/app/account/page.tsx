@@ -6,9 +6,9 @@ import { useRouter } from "next/navigation";
 import { User, Mail, Phone, MapPin, Package, Loader2 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { formatSavedAddress } from "@/lib/addresses";
-import { getUserOrders, StoredOrder } from "@/lib/orders";
 import { fetchOrdersFromApi } from "@/lib/orders-api";
 import OrderHistoryCard from "@/components/OrderHistoryCard";
+import { StoredOrder } from "@/lib/orders";
 
 export default function AccountPage() {
   const { user, isLoading } = useAuth();
@@ -24,11 +24,7 @@ export default function AccountPage() {
   useEffect(() => {
     if (!user) return;
     fetchOrdersFromApi().then((apiOrders) => {
-      if (apiOrders.length > 0) {
-        setOrders(apiOrders as StoredOrder[]);
-      } else {
-        setOrders(getUserOrders(user.id).reverse());
-      }
+      setOrders(apiOrders as StoredOrder[]);
     });
   }, [user]);
 

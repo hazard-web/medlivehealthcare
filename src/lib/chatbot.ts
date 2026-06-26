@@ -1,7 +1,6 @@
 import {
   buildTrackingSteps,
   formatOrderDateShort,
-  getOrderById,
   resolveOrderStatus,
   statusHeadline,
   StoredOrder,
@@ -19,6 +18,8 @@ export interface ChatMessage {
 export interface ChatOpenContext {
   orderId?: string;
   topic?: string;
+  /** Order loaded from the API — used for order-aware replies in chat. */
+  order?: StoredOrder;
 }
 
 const QUICK_REPLIES_GENERAL = [
@@ -89,7 +90,7 @@ function orderSummary(order: StoredOrder): string {
 
 export function getBotReply(input: string, context?: ChatOpenContext): string {
   const text = input.trim().toLowerCase();
-  const order = context?.orderId ? getOrderById(context.orderId) : null;
+  const order = context?.order ?? null;
 
   if (!text) {
     return "Please type a message or pick one of the quick options below.";

@@ -2,8 +2,6 @@ import { CartItem, Order, SavedAddress } from "@/lib/types";
 import { formatSavedAddress } from "@/lib/addresses";
 import { resolveOrderProductImage } from "@/lib/product-images";
 
-export const ORDERS_KEY = "medlive_orders";
-
 export type OrderStatus =
   | "pending"
   | "paid"
@@ -83,34 +81,6 @@ export function paymentStatusDetail(order: StoredOrder): string {
   const status = resolveOrderStatus(order);
   if (status === "delivered") return "Cash payment collected on delivery";
   return "Pay when your order is delivered";
-}
-
-export function getAllOrders(): StoredOrder[] {
-  if (typeof window === "undefined") return [];
-  try {
-    return JSON.parse(localStorage.getItem(ORDERS_KEY) || "[]");
-  } catch {
-    return [];
-  }
-}
-
-export function getUserOrders(userId: string): StoredOrder[] {
-  return getAllOrders()
-    .filter((o) => o.userId === userId)
-    .map(hydrateOrder);
-}
-
-export function getOrderById(orderId: string): StoredOrder | null {
-  const order = getAllOrders().find((o) => o.id === orderId);
-  return order ? hydrateOrder(order) : null;
-}
-
-export function saveOrder(order: StoredOrder) {
-  const orders = getAllOrders();
-  const index = orders.findIndex((o) => o.id === order.id);
-  if (index >= 0) orders[index] = order;
-  else orders.push(order);
-  localStorage.setItem(ORDERS_KEY, JSON.stringify(orders));
 }
 
 export function formatOrderDate(iso: string): string {
@@ -337,41 +307,6 @@ export function canReturn(order: StoredOrder): boolean {
     (status === "delivered" || status === "out_for_delivery" || status === "shipped") &&
     !order.returnRequest
   );
-}
-
-export function submitReturnRequest(
-  order: StoredOrder,
-  payload: {
-    productIds: string[];
-    reason: ReturnReason;
-    comments?: string;
-  }
-): StoredOrder {
-  const selectedItems = order.items.filter((i) =>
-    payload.productIds.includes(i.product.id)
-  );
-  const refundAmount = selectedItems.reduce(
-    (sum, i) => sum + i.product.price * i.quantity,
-    0
-  );
-
-  const updated: StoredOrder = {
-    ...order,
-    status: "return_requested",
-    returnRequest: {
-      id: `ret_${Date.now()}`,
-      productIds: payload.productIds,
-      reason: payload.reason,
-      comments: payload.comments,
-      refundMethod: "original_payment",
-      status: "requested",
-      createdAt: new Date().toISOString(),
-      refundAmount,
-    },
-  };
-
-  saveOrder(updated);
-  return updated;
 }
 
 export function orderItemCount(items: CartItem[]): number {
