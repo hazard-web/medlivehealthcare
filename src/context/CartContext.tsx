@@ -33,6 +33,8 @@ interface CartContextType {
   pincodeResult: PincodeCheckResult | null;
   checkDeliveryPincode: (pincode?: string) => PincodeCheckResult;
   totals: OrderTotals;
+  /** True after cart/promo/pincode have been read from localStorage. */
+  isReady: boolean;
 }
 
 const CartContext = createContext<CartContextType | null>(null);
@@ -55,6 +57,29 @@ function migrateCartItem(raw: CartItem): CartItem {
   };
 }
 
+function parseStoredCart(raw: string): CartItem[] {
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    const items: CartItem[] = [];
+    for (const entry of parsed) {
+      try {
+        if (!entry || typeof entry !== "object") continue;
+        const item = entry as CartItem;
+        if (!item.product?.id || typeof item.quantity !== "number" || item.quantity < 1) {
+          continue;
+        }
+        items.push(migrateCartItem(item));
+      } catch {
+        /* skip corrupt line */
+      }
+    }
+    return items;
+  } catch {
+    return [];
+  }
+}
+
 export function CartProvider({ children }: { children: ReactNode }) {
   const [items, setItems] = useState<CartItem[]>([]);
   const [appliedPromo, setAppliedPromo] = useState<AppliedPromo | null>(null);
@@ -66,8 +91,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
     try {
       const stored = localStorage.getItem(CART_KEY);
       if (stored) {
-        const parsed = JSON.parse(stored) as CartItem[];
-        setItems(parsed.map(migrateCartItem));
+        setItems(parseStoredCart(stored));
       }
 
       const storedPromo = localStorage.getItem(PROMO_KEY);
@@ -216,6 +240,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
         pincodeResult,
         checkDeliveryPincode,
         totals,
+        isReady: hydrated,
       }}
     >
       {children}

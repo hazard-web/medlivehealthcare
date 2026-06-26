@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { useCart } from "@/context/CartContext";
 import { formatPrice } from "@/lib/products";
+import { getProductImage } from "@/lib/product-images";
 import { resolveCartLineUnitPrice } from "@/lib/cart-pricing";
 import RazorpayPayment from "@/components/RazorpayPayment";
 import PromoCodeInput from "@/components/PromoCodeInput";
@@ -36,6 +37,7 @@ export default function CheckoutPage() {
     pincodeResult,
     checkDeliveryPincode,
     totals,
+    isReady: cartReady,
   } = useCart();
   const router = useRouter();
 
@@ -49,23 +51,36 @@ export default function CheckoutPage() {
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("razorpay");
   const [placingCod, setPlacingCod] = useState(false);
   const [shippingSubmitting, setShippingSubmitting] = useState(false);
+  const [redirecting, setRedirecting] = useState(false);
 
   useEffect(() => {
-    if (!isLoading && !user) {
-      router.push("/auth/signin?redirect=/checkout");
-    }
-  }, [user, isLoading, router]);
+    if (!cartReady || isLoading) return;
 
-  useEffect(() => {
-    if (!isLoading && items.length === 0) {
-      router.push("/cart");
+    if (!user) {
+      setRedirecting(true);
+      router.replace("/auth/signin?redirect=/checkout");
+      return;
     }
-  }, [items, isLoading, router]);
 
-  if (isLoading || !user || items.length === 0) {
+    if (items.length === 0) {
+      setRedirecting(true);
+      router.replace("/cart");
+    }
+  }, [user, isLoading, cartReady, items.length, router]);
+
+  if (!cartReady || isLoading || redirecting || !user || items.length === 0) {
     return (
-      <div className="flex min-h-[50vh] items-center justify-center">
+      <div className="flex min-h-[50vh] flex-col items-center justify-center gap-3 px-4 text-center">
         <Loader2 className="h-8 w-8 animate-spin text-primary-600" />
+        <p className="text-sm text-slate-500">
+          {!cartReady || isLoading
+            ? "Loading checkout…"
+            : !user
+              ? "Sign in to continue checkout…"
+              : items.length === 0
+                ? "Your cart is empty — redirecting…"
+                : "Preparing checkout…"}
+        </p>
       </div>
     );
   }
@@ -375,7 +390,13 @@ export default function CheckoutPage() {
               {items.map(({ lineId, product, quantity }) => (
                 <li key={lineId} className="flex gap-3">
                   <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-slate-100">
-                    <Image src={product.image} alt={product.name} fill className="object-cover" sizes="56px" />
+                    <Image
+                      src={getProductImage(product)}
+                      alt={product.name}
+                      fill
+                      className="object-cover"
+                      sizes="56px"
+                    />
                   </div>
                   <div className="flex-1 text-sm">
                     <p className="line-clamp-1 font-medium text-slate-900">{product.name}</p>

@@ -84,17 +84,30 @@ export async function createSessionToken(userId: string): Promise<string> {
 export async function setSessionCookie(token: string): Promise<void> {
   const jar = await cookies();
   const crossOrigin = Boolean(process.env.FRONTEND_URL?.trim());
+  const cookieDomain = process.env.COOKIE_DOMAIN?.trim();
   jar.set(SESSION_COOKIE, token, {
     httpOnly: true,
     secure: crossOrigin || process.env.NODE_ENV === "production",
     sameSite: crossOrigin ? "none" : "lax",
     path: "/",
     maxAge: SESSION_DAYS * 24 * 60 * 60,
+    ...(cookieDomain ? { domain: cookieDomain } : {}),
   });
 }
 
 export async function clearSessionCookie(): Promise<void> {
   const jar = await cookies();
+  const cookieDomain = process.env.COOKIE_DOMAIN?.trim();
+  if (cookieDomain) {
+    jar.set(SESSION_COOKIE, "", {
+      httpOnly: true,
+      secure: true,
+      sameSite: "none",
+      path: "/",
+      maxAge: 0,
+      domain: cookieDomain,
+    });
+  }
   jar.delete(SESSION_COOKIE);
 }
 
