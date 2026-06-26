@@ -7,24 +7,38 @@ import {
 import { StoredOrder } from "@/lib/server/store";
 import { formatSavedAddress } from "@/lib/addresses";
 
-export function buildGstInvoiceHtml(order: StoredOrder): string {
-  const date = new Date(order.createdAt).toLocaleDateString("en-IN", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
 
-  const buyerName =
-    order.shippingAddress.fullName || order.guestName || "Customer";
-  const buyerGstin = order.gstin || "—";
+export function buildGstInvoiceHtml(order: StoredOrder): string {
+  const date = escapeHtml(
+    new Date(order.createdAt).toLocaleDateString("en-IN", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    })
+  );
+
+  const buyerName = escapeHtml(
+    order.shippingAddress.fullName || order.guestName || "Customer"
+  );
+  const buyerGstin = escapeHtml(order.gstin || "—");
   const taxable = order.subtotal - order.promoDiscount;
+  const invoiceNumber = escapeHtml(order.invoiceNumber ?? "");
+  const orderNumber = escapeHtml(order.orderNumber);
 
   const rows = order.items
     .map(
       (item) => `
     <tr>
-      <td>${item.name}</td>
-      <td>${item.hsn ?? "—"}</td>
+      <td>${escapeHtml(item.name)}</td>
+      <td>${escapeHtml(item.hsn ?? "—")}</td>
       <td style="text-align:center">${item.quantity}</td>
       <td style="text-align:right">${formatPriceDetailed(item.unitPrice)}</td>
       <td style="text-align:right">${formatPriceDetailed(item.lineTotal)}</td>
@@ -37,7 +51,7 @@ export function buildGstInvoiceHtml(order: StoredOrder): string {
 <html lang="en-IN">
 <head>
   <meta charset="utf-8" />
-  <title>Tax Invoice ${order.invoiceNumber}</title>
+  <title>Tax Invoice ${invoiceNumber}</title>
   <style>
     body { font-family: system-ui, sans-serif; color: #0f172a; margin: 32px; font-size: 13px; }
     h1 { font-size: 22px; margin: 0 0 4px; }
@@ -54,7 +68,7 @@ export function buildGstInvoiceHtml(order: StoredOrder): string {
 </head>
 <body>
   <h1>Tax Invoice</h1>
-  <p class="muted">Invoice No: <strong>${order.invoiceNumber}</strong> · Order: <strong>${order.orderNumber}</strong> · Date: ${date}</p>
+  <p class="muted">Invoice No: <strong>${invoiceNumber}</strong> · Order: <strong>${orderNumber}</strong> · Date: ${date}</p>
 
   <div class="grid">
     <div>
@@ -66,8 +80,8 @@ export function buildGstInvoiceHtml(order: StoredOrder): string {
     <div>
       <strong>Bill to / Ship to</strong><br />
       ${buyerName}<br />
-      ${order.shippingAddress.phone}<br />
-      ${formatSavedAddress(order.shippingAddress)}<br />
+      ${escapeHtml(order.shippingAddress.phone)}<br />
+      ${escapeHtml(formatSavedAddress(order.shippingAddress))}<br />
       Buyer GSTIN: ${buyerGstin}
     </div>
   </div>
@@ -88,7 +102,7 @@ export function buildGstInvoiceHtml(order: StoredOrder): string {
 
   <div class="totals">
     <div><span>Subtotal</span><span>${formatPrice(order.subtotal)}</span></div>
-    ${order.promoDiscount > 0 ? `<div><span>Promo (${order.promoCode})</span><span>−${formatPrice(order.promoDiscount)}</span></div>` : ""}
+    ${order.promoDiscount > 0 ? `<div><span>Promo (${escapeHtml(order.promoCode ?? "")})</span><span>−${formatPrice(order.promoDiscount)}</span></div>` : ""}
     <div><span>Taxable value</span><span>${formatPrice(taxable)}</span></div>
     ${order.cgst > 0 ? `<div><span>CGST</span><span>${formatPriceDetailed(order.cgst)}</span></div>` : ""}
     ${order.sgst > 0 ? `<div><span>SGST</span><span>${formatPriceDetailed(order.sgst)}</span></div>` : ""}

@@ -119,6 +119,7 @@ export default function CheckoutPage() {
     paymentMethod: PaymentMethod;
     paymentId?: string;
     razorpayOrderId?: string;
+    razorpaySignature?: string;
   }) => {
     const shippingForm = shipping;
     if (!shippingForm || !checkoutToken) {
@@ -136,6 +137,7 @@ export default function CheckoutPage() {
         shippingAddress: addressSnapshot,
         paymentId: input.paymentId,
         razorpayOrderId: input.razorpayOrderId,
+        razorpaySignature: input.razorpaySignature,
         pincode: shippingForm.pincode,
       }),
     });
@@ -193,9 +195,18 @@ export default function CheckoutPage() {
     }
   };
 
-  const handlePaymentSuccess = async (paymentId: string, razorpayOrderId: string) => {
+  const handlePaymentSuccess = async (
+    paymentId: string,
+    razorpayOrderId: string,
+    razorpaySignature: string
+  ) => {
     try {
-      await placeOrder({ paymentMethod: "razorpay", paymentId, razorpayOrderId });
+      await placeOrder({
+        paymentMethod: "razorpay",
+        paymentId,
+        razorpayOrderId,
+        razorpaySignature,
+      });
     } catch (err) {
       setShippingError(err instanceof Error ? err.message : "Order could not be saved");
     }

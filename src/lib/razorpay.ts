@@ -1,4 +1,19 @@
+import crypto from "crypto";
 import Razorpay from "razorpay";
+
+export function verifyRazorpaySignature(
+  razorpayOrderId: string,
+  razorpayPaymentId: string,
+  razorpaySignature: string
+): boolean {
+  const config = getRazorpayConfig();
+  if (!config) return false;
+  const expected = crypto
+    .createHmac("sha256", config.keySecret)
+    .update(`${razorpayOrderId}|${razorpayPaymentId}`)
+    .digest("hex");
+  return expected === razorpaySignature;
+}
 
 export function getRazorpayConfig() {
   const keyId = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID;
