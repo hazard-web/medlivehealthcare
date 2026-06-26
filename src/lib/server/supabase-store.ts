@@ -439,3 +439,241 @@ export async function persistStoreToSupabase(store: MedLiveStore): Promise<void>
       order_counter = excluded.order_counter
   `;
 }
+
+// --- Targeted queries (avoid full-store read/write on hot paths) ---
+
+export async function dbFindUserByEmail(email: string): Promise<StoredUser | null> {
+  const sql = getSql();
+  const rows = await sql<UserRow[]>`
+    select * from users where lower(email) = ${email.toLowerCase()} limit 1
+  `;
+  return rows[0] ? rowToUser(rows[0]) : null;
+}
+
+export async function dbFindUserById(id: string): Promise<StoredUser | null> {
+  const sql = getSql();
+  const rows = await sql<UserRow[]>`select * from users where id = ${id} limit 1`;
+  return rows[0] ? rowToUser(rows[0]) : null;
+}
+
+export async function dbFindUserByPhone(phone: string): Promise<StoredUser | null> {
+  const sql = getSql();
+  const rows = await sql<UserRow[]>`select * from users where phone = ${phone} limit 1`;
+  return rows[0] ? rowToUser(rows[0]) : null;
+}
+
+export async function dbInsertUser(user: StoredUser): Promise<void> {
+  const sql = getSql();
+  await sql`
+    insert into users (id, name, email, phone, password_hash, is_guest, gstin, saved_addresses, created_at)
+    values (
+      ${user.id}, ${user.name}, ${user.email}, ${user.phone}, ${user.passwordHash},
+      ${user.isGuest}, ${user.gstin}, ${sql.json((user.savedAddresses ?? []) as never)}, ${user.createdAt}
+    )
+  `;
+}
+
+export async function dbUpdateUser(user: StoredUser): Promise<void> {
+  const sql = getSql();
+  await sql`
+    update users set
+      name = ${user.name},
+      email = ${user.email},
+      phone = ${user.phone},
+      password_hash = ${user.passwordHash},
+      is_guest = ${user.isGuest},
+      gstin = ${user.gstin},
+      saved_addresses = ${sql.json((user.savedAddresses ?? []) as never)}
+    where id = ${user.id}
+  `;
+}
+
+export async function dbInsertSession(session: StoredSession): Promise<void> {
+  const sql = getSql();
+  await sql`
+    insert into sessions (token, user_id, expires_at)
+    values (${session.token}, ${session.userId}, ${session.expiresAt})
+    on conflict (token) do update set
+      user_id = excluded.user_id,
+      expires_at = excluded.expires_at
+  `;
+}
+
+export async function dbFindSessionUser(token: string, userId: string): Promise<StoredUser | null> {
+  const sql = getSql();
+  const now = new Date().toISOString();
+  const rows = await sql<UserRow[]>`
+    select u.* from users u
+    inner join sessions s on s.user_id = u.id
+    where s.token = ${token}
+      and s.user_id = ${userId}
+      and s.expires_at > ${now}::timestamptz
+    limit 1
+  `;
+  return rows[0] ? rowToUser(rows[0]) : null;
+}
+
+export async function dbDeleteSession(token: string): Promise<void> {
+  const sql = getSql();
+  await sql`delete from sessions where token = ${token}`;
+}
+
+export async function dbDeleteSessionsForUser(userId: string): Promise<void> {
+  const sql = getSql();
+  await sql`delete from sessions where user_id = ${userId}`;
+}
+
+export async function dbInsertCheckoutToken(token: CheckoutToken): Promise<void> {
+  const sql = getSql();
+  await sql`
+    insert into checkout_tokens (
+      token, user_id, guest_phone, items, subtotal, promo_code, promo_discount,
+      shipping, tax, cgst, sgst, igst, total, gstin, shipping_state, expires_at
+    ) values (
+      ${token.token}, ${token.userId}, ${token.guestPhone},
+      ${sql.json(token.items as never)}, ${token.subtotal}, ${token.promoCode}, ${token.promoDiscount},
+      ${token.shipping}, ${token.tax}, ${token.cgst}, ${token.sgst}, ${token.igst}, ${token.total},
+      ${token.gstin}, ${token.shippingState}, ${token.expiresAt}
+    )
+  `;
+}
+
+export async function dbGetCheckoutToken(token: string): Promise<CheckoutToken | null> {
+  const sql = getSql();
+  const now = new Date().toISOString();
+  const rows = await sql<CheckoutRow[]>`
+    select * from checkout_tokens
+    where token = ${token} and expires_at > ${now}::timestamptz
+    limit 1
+  `;
+  return rows[0] ? rowToCheckout(rows[0]) : null;
+}
+
+export async function dbConsumeCheckoutToken(token: string): Promise<CheckoutToken | null> {
+  const sql = getSql();
+  const now = new Date().toISOString();
+  const rows = await sql<CheckoutRow[]>`
+    delete from checkout_tokens
+    where token = ${token} and expires_at > ${now}::timestamptz
+    returning *
+  `;
+  return rows[0] ? rowToCheckout(rows[0]) : null;
+}
+
+export async function dbNextOrderAndInvoiceNumbers(): Promise<{
+  orderNumber: string;
+  invoiceNumber: string;
+}> {
+  const sql = getSql();
+  const rows = await sql<CounterRow[]>`
+    update app_counters
+    set order_counter = order_counter + 1, invoice_counter = invoice_counter + 1
+    where id = 1
+    returning order_counter, invoice_counter
+  `;
+  const row = rows[0] ?? { order_counter: 10000, invoice_counter: 1000 };
+  const fy = new Date().getFullYear().toString().slice(-2);
+  return {
+    orderNumber: `ML${row.order_counter}`,
+    invoiceNumber: `INV${fy}${String(row.invoice_counter).padStart(5, "0")}`,
+  };
+}
+
+export async function dbInsertOrder(order: StoredOrder): Promise<void> {
+  const sql = getSql();
+  await sql`
+    insert into orders (
+      id, order_number, user_id, guest_phone, guest_email, guest_name, items,
+      subtotal, promo_code, promo_discount, shipping, tax, cgst, sgst, igst, total,
+      payment_method, payment_status, payment_id, razorpay_order_id, status,
+      shipping_address, gstin, invoice_number, pincode, shipment, return_request, created_at
+    ) values (
+      ${order.id}, ${order.orderNumber}, ${order.userId}, ${order.guestPhone}, ${order.guestEmail},
+      ${order.guestName}, ${sql.json(order.items as never)}, ${order.subtotal}, ${order.promoCode},
+      ${order.promoDiscount}, ${order.shipping}, ${order.tax}, ${order.cgst}, ${order.sgst},
+      ${order.igst}, ${order.total}, ${order.paymentMethod}, ${order.paymentStatus},
+      ${order.paymentId}, ${order.razorpayOrderId}, ${order.status},
+      ${sql.json(order.shippingAddress as never)}, ${order.gstin}, ${order.invoiceNumber},
+      ${order.pincode}, ${sql.json(order.shipment as never)},
+      ${sql.json(order.returnRequest as never)}, ${order.createdAt}
+    )
+  `;
+}
+
+export async function dbUpdateOrder(order: StoredOrder): Promise<void> {
+  const sql = getSql();
+  await sql`
+    update orders set
+      status = ${order.status},
+      return_request = ${sql.json(order.returnRequest as never)}
+    where id = ${order.id}
+  `;
+}
+
+export async function dbFindOrdersByUserId(userId: string): Promise<StoredOrder[]> {
+  const sql = getSql();
+  const rows = await sql<OrderRow[]>`
+    select * from orders where user_id = ${userId} order by created_at desc
+  `;
+  return rows.map(rowToOrder);
+}
+
+export async function dbFindOrderByIdOrNumber(id: string): Promise<StoredOrder | null> {
+  const sql = getSql();
+  const rows = await sql<OrderRow[]>`
+    select * from orders where id = ${id} or order_number = ${id} limit 1
+  `;
+  return rows[0] ? rowToOrder(rows[0]) : null;
+}
+
+export async function dbFindPasswordResetToken(
+  token: string
+): Promise<PasswordResetToken | null> {
+  const sql = getSql();
+  const now = new Date().toISOString();
+  const rows = await sql<PasswordResetRow[]>`
+    select * from password_reset_tokens
+    where token = ${token} and expires_at > ${now}::timestamptz
+    limit 1
+  `;
+  return rows[0] ? rowToReset(rows[0]) : null;
+}
+
+export async function dbReplacePasswordResetToken(
+  userId: string,
+  email: string,
+  expiresAt: string
+): Promise<string> {
+  const sql = getSql();
+  const token = crypto.randomUUID();
+  await sql`delete from password_reset_tokens where user_id = ${userId}`;
+  await sql`
+    insert into password_reset_tokens (token, user_id, email, expires_at)
+    values (${token}, ${userId}, ${email}, ${expiresAt})
+  `;
+  return token;
+}
+
+export async function dbResetPasswordWithToken(
+  token: string,
+  passwordHash: string
+): Promise<{ success: true } | { error: string }> {
+  const sql = getSql();
+  return sql.begin(async (tx) => {
+    const now = new Date().toISOString();
+    const rows = await tx<PasswordResetRow[]>`
+      select * from password_reset_tokens
+      where token = ${token} and expires_at > ${now}::timestamptz
+      limit 1
+    `;
+    const record = rows[0];
+    if (!record) {
+      return { error: "This reset link is invalid or has expired." };
+    }
+
+    await tx`update users set password_hash = ${passwordHash} where id = ${record.user_id}`;
+    await tx`delete from password_reset_tokens where token = ${token}`;
+    await tx`delete from sessions where user_id = ${record.user_id}`;
+    return { success: true as const };
+  });
+}

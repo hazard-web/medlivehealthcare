@@ -2,10 +2,25 @@ import { cookies } from "next/headers";
 import bcrypt from "bcryptjs";
 import { SignJWT, jwtVerify } from "jose";
 import { SavedAddress, User } from "@/lib/types";
+import { isDatabaseConfigured } from "./db";
+import {
+  dbDeleteSession,
+  dbFindPasswordResetToken,
+  dbFindSessionUser,
+  dbFindUserByEmail,
+  dbFindUserById,
+  dbFindUserByPhone,
+  dbInsertSession,
+  dbInsertUser,
+  dbReplacePasswordResetToken,
+  dbResetPasswordWithToken,
+  dbUpdateUser,
+} from "./supabase-store";
 import { mutateStore, purgeExpired, readStore, StoredUser } from "./store";
 
 const SESSION_COOKIE = "medlive_session";
 const SESSION_DAYS = 30;
+const BCRYPT_ROUNDS = 8;
 
 function getSecret(): Uint8Array {
   const secret = process.env.AUTH_SECRET;
@@ -28,7 +43,7 @@ export function toPublicUser(user: StoredUser): User {
 }
 
 export async function hashPassword(password: string): Promise<string> {
-  return bcrypt.hash(password, 10);
+  return bcrypt.hash(password, BCRYPT_ROUNDS);
 }
 
 export async function verifyPassword(password: string, hash: string): Promise<boolean> {
@@ -44,6 +59,15 @@ export async function createSessionToken(userId: string): Promise<string> {
     .setExpirationTime(`${SESSION_DAYS}d`)
     .setIssuedAt()
     .sign(getSecret());
+
+  if (isDatabaseConfigured()) {
+    await dbInsertSession({
+      token,
+      userId,
+      expiresAt: expiresAt.toISOString(),
+    });
+    return token;
+  }
 
   await mutateStore((store) => {
     purgeExpired(store);
@@ -84,6 +108,10 @@ export async function getSessionUser(): Promise<StoredUser | null> {
     const userId = payload.sub;
     if (!userId || typeof userId !== "string") return null;
 
+    if (isDatabaseConfigured()) {
+      return dbFindSessionUser(token, userId);
+    }
+
     const store = await readStore();
     purgeExpired(store);
     const session = store.sessions.find((s) => s.token === token && s.userId === userId);
@@ -99,9 +127,13 @@ export async function signOutSession(): Promise<void> {
   const jar = await cookies();
   const token = jar.get(SESSION_COOKIE)?.value;
   if (token) {
-    await mutateStore((store) => {
-      store.sessions = store.sessions.filter((s) => s.token !== token);
-    });
+    if (isDatabaseConfigured()) {
+      await dbDeleteSession(token);
+    } else {
+      await mutateStore((store) => {
+        store.sessions = store.sessions.filter((s) => s.token !== token);
+      });
+    }
   }
   await clearSessionCookie();
 }
@@ -121,6 +153,26 @@ export async function signUpUser(data: {
   const passwordError = validatePassword(data.password);
   if (passwordError) {
     return { error: passwordError };
+  }
+
+  if (isDatabaseConfigured()) {
+    if (await dbFindUserByEmail(email)) {
+      return { error: "An account with this email already exists." };
+    }
+
+    const user: StoredUser = {
+      id: crypto.randomUUID(),
+      name: data.name.trim(),
+      email,
+      phone: data.phone?.replace(/\D/g, "").slice(-10) || null,
+      passwordHash: await hashPassword(data.password),
+      isGuest: false,
+      gstin: null,
+      savedAddresses: [],
+      createdAt: new Date().toISOString(),
+    };
+    await dbInsertUser(user);
+    return { user };
   }
 
   return mutateStore(async (store) => {
@@ -148,6 +200,15 @@ export async function signInUser(
   password: string
 ): Promise<{ user: StoredUser } | { error: string }> {
   const normalized = email.trim().toLowerCase();
+
+  if (isDatabaseConfigured()) {
+    const user = await dbFindUserByEmail(normalized);
+    if (!user?.passwordHash) return { error: "Invalid email or password." };
+    const valid = await verifyPassword(password, user.passwordHash);
+    if (!valid) return { error: "Invalid email or password." };
+    return { user };
+  }
+
   const store = await readStore();
   const user = store.users.find((u) => u.email?.toLowerCase() === normalized);
   if (!user?.passwordHash) return { error: "Invalid email or password." };
@@ -158,6 +219,33 @@ export async function signInUser(
 
 export async function upsertPhoneUser(phone: string, name?: string): Promise<StoredUser> {
   const cleaned = phone.replace(/\D/g, "").slice(-10);
+
+  if (isDatabaseConfigured()) {
+    const existing = await dbFindUserByPhone(cleaned);
+    if (existing) {
+      if (name?.trim()) {
+        existing.name = name.trim();
+        existing.isGuest = false;
+        await dbUpdateUser(existing);
+      }
+      return existing;
+    }
+
+    const user: StoredUser = {
+      id: crypto.randomUUID(),
+      name: name?.trim() || "MedLive Customer",
+      email: null,
+      phone: cleaned,
+      passwordHash: null,
+      isGuest: false,
+      gstin: null,
+      savedAddresses: [],
+      createdAt: new Date().toISOString(),
+    };
+    await dbInsertUser(user);
+    return user;
+  }
+
   return mutateStore((store) => {
     let user = store.users.find((u) => u.phone === cleaned);
     if (user) {
@@ -186,6 +274,23 @@ export async function saveUserAddress(
   address: SavedAddress,
   makeDefault = false
 ): Promise<StoredUser | null> {
+  if (isDatabaseConfigured()) {
+    const user = await dbFindUserById(userId);
+    if (!user) return null;
+
+    const existing = user.savedAddresses ?? [];
+    const withoutDup = existing.filter((a) => a.id !== address.id);
+    const isDefault = makeDefault || address.isDefault || withoutDup.length === 0;
+    const saved: SavedAddress = { ...address, isDefault };
+    user.savedAddresses = [
+      ...withoutDup.map((a) => ({ ...a, isDefault: isDefault ? false : a.isDefault })),
+      saved,
+    ];
+    user.phone = saved.phone;
+    await dbUpdateUser(user);
+    return user;
+  }
+
   return mutateStore((store) => {
     const user = store.users.find((u) => u.id === userId);
     if (!user) return null;
@@ -204,6 +309,14 @@ export async function saveUserAddress(
 }
 
 export async function updateUserGstin(userId: string, gstin: string | null): Promise<void> {
+  if (isDatabaseConfigured()) {
+    const user = await dbFindUserById(userId);
+    if (!user) return;
+    user.gstin = gstin;
+    await dbUpdateUser(user);
+    return;
+  }
+
   await mutateStore((store) => {
     const user = store.users.find((u) => u.id === userId);
     if (user) user.gstin = gstin;
@@ -213,7 +326,6 @@ export async function updateUserGstin(userId: string, gstin: string | null): Pro
 const RESET_TOKEN_HOURS = 1;
 
 async function sendPasswordResetEmail(email: string, resetUrl: string): Promise<void> {
-  // Production: wire up Resend, SendGrid, SES, etc.
   if (process.env.NODE_ENV !== "production") {
     console.log(`[password-reset] ${email} → ${resetUrl}`);
   }
@@ -222,6 +334,22 @@ async function sendPasswordResetEmail(email: string, resetUrl: string): Promise<
 export async function requestPasswordReset(email: string): Promise<{ success: true }> {
   const normalized = email.trim().toLowerCase();
   if (!normalized) {
+    return { success: true };
+  }
+
+  if (isDatabaseConfigured()) {
+    const user = await dbFindUserByEmail(normalized);
+    if (user?.passwordHash) {
+      const expiresAt = new Date(
+        Date.now() + RESET_TOKEN_HOURS * 60 * 60 * 1000
+      ).toISOString();
+      const token = await dbReplacePasswordResetToken(user.id, normalized, expiresAt);
+      const baseUrl =
+        process.env.FRONTEND_URL?.split(",")[0]?.trim() ||
+        process.env.NEXT_PUBLIC_APP_URL ||
+        "http://localhost:3000";
+      await sendPasswordResetEmail(normalized, `${baseUrl}/auth/reset-password?token=${token}`);
+    }
     return { success: true };
   }
 
@@ -267,6 +395,14 @@ export async function requestPasswordReset(email: string): Promise<{ success: tr
 export async function validatePasswordResetToken(
   token: string
 ): Promise<{ valid: true; email: string } | { valid: false; error: string }> {
+  if (isDatabaseConfigured()) {
+    const record = await dbFindPasswordResetToken(token);
+    if (!record) {
+      return { valid: false, error: "This reset link is invalid or has expired." };
+    }
+    return { valid: true, email: record.email };
+  }
+
   const store = await readStore();
   purgeExpired(store);
   const record = (store.passwordResetTokens ?? []).find((t) => t.token === token);
@@ -289,6 +425,12 @@ export async function resetPasswordWithToken(
     return { error: passwordError };
   }
 
+  const passwordHash = await hashPassword(password);
+
+  if (isDatabaseConfigured()) {
+    return dbResetPasswordWithToken(token, passwordHash);
+  }
+
   return mutateStore(async (store) => {
     purgeExpired(store);
     if (!store.passwordResetTokens) store.passwordResetTokens = [];
@@ -309,7 +451,7 @@ export async function resetPasswordWithToken(
       return { error: "Account not found." };
     }
 
-    user.passwordHash = await hashPassword(password);
+    user.passwordHash = passwordHash;
     store.passwordResetTokens.splice(idx, 1);
     store.sessions = store.sessions.filter((s) => s.userId !== user.id);
 

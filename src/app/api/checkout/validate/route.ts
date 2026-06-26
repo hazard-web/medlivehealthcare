@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
-import { getSessionUser } from "@/lib/server/auth";
+import { getSessionUser, saveUserAddress, toPublicUser } from "@/lib/server/auth";
 import { apiError } from "@/lib/server/api-error";
 import { createCheckoutToken, CartLineInput } from "@/lib/server/checkout";
+import { SavedAddress } from "@/lib/types";
 
 export async function POST(request: Request) {
   try {
@@ -11,6 +12,8 @@ export async function POST(request: Request) {
       shippingState?: string;
       gstin?: string;
       guestPhone?: string;
+      saveAddress?: SavedAddress;
+      makeDefault?: boolean;
     };
 
     try {
@@ -29,20 +32,28 @@ export async function POST(request: Request) {
 
     const sessionUser = await getSessionUser();
 
-    const result = await createCheckoutToken({
-      lines: body.lines,
-      promoCode: body.promoCode,
-      shippingState: body.shippingState,
-      gstin: body.gstin,
-      userId: sessionUser?.id ?? null,
-      guestPhone: body.guestPhone ?? sessionUser?.phone,
-    });
+    const [result, updatedUser] = await Promise.all([
+      createCheckoutToken({
+        lines: body.lines,
+        promoCode: body.promoCode,
+        shippingState: body.shippingState,
+        gstin: body.gstin,
+        userId: sessionUser?.id ?? null,
+        guestPhone: body.guestPhone ?? sessionUser?.phone,
+      }),
+      sessionUser && body.saveAddress
+        ? saveUserAddress(sessionUser.id, body.saveAddress, body.makeDefault ?? false)
+        : Promise.resolve(null),
+    ]);
 
     if ("error" in result) {
       return NextResponse.json({ error: result.error }, { status: 400 });
     }
 
-    return NextResponse.json(result);
+    return NextResponse.json({
+      ...result,
+      user: updatedUser ? toPublicUser(updatedUser) : undefined,
+    });
   } catch (error) {
     return apiError(error, "Could not validate checkout. Please try again.");
   }
