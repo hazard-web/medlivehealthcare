@@ -95,6 +95,7 @@ export interface Order {
   orderNumber?: string;
   invoiceNumber?: string;
   paymentMethod?: "razorpay" | "cod";
+  paymentStatus?: "pending" | "paid" | "failed" | "refunded";
   gstin?: string;
   cgst?: number;
   sgst?: number;

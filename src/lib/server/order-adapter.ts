@@ -1,9 +1,11 @@
 import { CartItem, Order, OrderStatus } from "@/lib/types";
+import { normalizeJsonbArray } from "@/lib/jsonb";
 import { getProductById } from "@/lib/products";
-import { StoredOrder } from "./store";
+import { StoredOrder, StoredOrderItem } from "./store";
 
 export function serverOrderToClient(order: StoredOrder): Order {
-  const items: CartItem[] = order.items.map((item) => {
+  const lineItems = normalizeJsonbArray<StoredOrderItem>(order.items);
+  const items: CartItem[] = lineItems.map((item) => {
     const catalog = getProductById(item.productId);
     return {
       lineId: item.lineId,
@@ -40,12 +42,13 @@ export function serverOrderToClient(order: StoredOrder): Order {
     promoDiscount: order.promoDiscount,
     promoCode: order.promoCode ?? undefined,
     pincode: order.pincode,
-    shippingAddress: order.shippingAddress,
-    shippingName: order.shippingAddress.fullName,
-    shippingPhone: order.shippingAddress.phone,
+    shippingAddress: order.shippingAddress ?? undefined,
+    shippingName: order.shippingAddress?.fullName ?? "",
+    shippingPhone: order.shippingAddress?.phone ?? "",
     orderNumber: order.orderNumber,
     invoiceNumber: order.invoiceNumber ?? undefined,
     paymentMethod: order.paymentMethod,
+    paymentStatus: order.paymentStatus,
     gstin: order.gstin ?? undefined,
     cgst: order.cgst,
     sgst: order.sgst,

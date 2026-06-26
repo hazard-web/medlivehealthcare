@@ -5,11 +5,10 @@ import { ChevronRight, Package } from "lucide-react";
 import ProductImage from "@/components/ProductImage";
 import { formatPrice } from "@/lib/products";
 import {
+  displayOrderStatus,
+  displayOrderStatusTone,
   formatOrderDateShort,
   orderItemCount,
-  resolveOrderStatus,
-  statusHeadline,
-  statusTone,
   StoredOrder,
 } from "@/lib/orders";
 
@@ -18,7 +17,6 @@ interface OrderHistoryCardProps {
 }
 
 export default function OrderHistoryCard({ order }: OrderHistoryCardProps) {
-  const status = resolveOrderStatus(order);
   const firstItem = order.items[0];
   const extraCount = order.items.length - 1;
 
@@ -36,7 +34,9 @@ export default function OrderHistoryCard({ order }: OrderHistoryCardProps) {
           </div>
           <div>
             <p className="text-xs text-slate-500">Order #</p>
-            <p className="font-mono text-xs font-medium text-slate-800">{order.id}</p>
+            <p className="font-mono text-xs font-medium text-slate-800">
+              {order.orderNumber ?? order.id}
+            </p>
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -84,9 +84,9 @@ export default function OrderHistoryCard({ order }: OrderHistoryCardProps) {
             {orderItemCount(order.items)} item{orderItemCount(order.items) !== 1 ? "s" : ""}
           </p>
           <span
-            className={`mt-2 inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${statusTone(status)}`}
+            className={`mt-2 inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${displayOrderStatusTone(order)}`}
           >
-            {statusHeadline(status, order.paymentMethod)}
+            {displayOrderStatus(order)}
           </span>
         </div>
 
