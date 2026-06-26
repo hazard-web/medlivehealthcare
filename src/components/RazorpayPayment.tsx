@@ -34,21 +34,29 @@ function loadRazorpayScript(): Promise<boolean> {
 interface RazorpayPaymentProps {
   amount: number;
   checkoutToken?: string;
+  medliveOrderId?: string;
   userName: string;
   userEmail: string;
   userPhone?: string;
   receipt?: string;
-  onSuccess: (paymentId: string, razorpayOrderId: string, razorpaySignature: string) => void;
+  onSuccess: (
+    paymentId: string,
+    razorpayOrderId: string,
+    razorpaySignature: string
+  ) => void | Promise<void>;
+  onFailure?: (reason: string) => void | Promise<void>;
 }
 
 export default function RazorpayPayment({
   amount,
   checkoutToken,
+  medliveOrderId,
   userName,
   userEmail,
   userPhone,
   receipt,
   onSuccess,
+  onFailure,
 }: RazorpayPaymentProps) {
   const [loading, setLoading] = useState(false);
   const [dismissed, setDismissed] = useState(false);
@@ -74,6 +82,7 @@ export default function RazorpayPayment({
         body: JSON.stringify({
           amount,
           checkoutToken,
+          medliveOrderId,
           receipt: receipt || `ml_${Date.now()}`,
           notes: { email: userEmail },
         }),
@@ -114,25 +123,35 @@ export default function RazorpayPayment({
           if (!verifyRes.ok || !verifyData.valid) {
             setError(verifyData.error || "Payment verification failed. Contact support.");
             setLoading(false);
+            await onFailure?.(verifyData.error || "Payment verification failed.");
             return;
           }
 
-          onSuccess(verifyData.paymentId, verifyData.orderId, response.razorpay_signature);
+          setLoading(true);
+          try {
+            await onSuccess(verifyData.paymentId, verifyData.orderId, response.razorpay_signature);
+          } catch {
+            setError("Payment received but order could not be confirmed. Check your order history.");
+            setLoading(false);
+          }
         },
         modal: {
           ondismiss: () => {
             unlockPageScroll();
             setLoading(false);
             setDismissed(true);
+            void onFailure?.("Payment was cancelled.");
           },
         },
       });
 
       rzp.on("payment.failed", (response) => {
         unlockPageScroll();
-        setError(response.error.description || "Payment failed. Please try again.");
+        const message = response.error.description || "Payment failed. Please try again.";
+        setError(message);
         setLoading(false);
         setDismissed(true);
+        void onFailure?.(message);
       });
 
       rzp.open();
@@ -143,7 +162,7 @@ export default function RazorpayPayment({
       setLoading(false);
       setDismissed(true);
     }
-  }, [amount, checkoutToken, onSuccess, receipt, userEmail, userName, userPhone]);
+  }, [amount, checkoutToken, medliveOrderId, onSuccess, onFailure, receipt, userEmail, userName, userPhone]);
 
   useEffect(() => {
     if (openedRef.current) return;

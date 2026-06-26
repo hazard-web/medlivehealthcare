@@ -11,9 +11,12 @@ import {
   dbGetCheckoutToken,
   dbInsertCheckoutToken,
   dbInsertOrder,
+  dbFindOrderByIdOrNumber,
   dbNextOrderAndInvoiceNumbers,
+  dbUpdateOrderPayment,
 } from "./supabase-store";
-import { mutateStore, nextInvoiceNumber, nextOrderNumber, purgeExpired, StoredOrder, StoredOrderItem } from "./store";
+import { mutateStore, nextInvoiceNumber, nextOrderNumber, purgeExpired, StoredOrder, StoredOrderItem, CheckoutToken } from "./store";
+import { verifyRazorpaySignature } from "@/lib/razorpay";
 
 export interface CartLineInput {
   lineId: string;
@@ -202,6 +205,227 @@ export async function getCheckoutToken(token: string) {
   const checkout = store.checkoutTokens.find((t) => t.token === token);
   if (!checkout || new Date(checkout.expiresAt).getTime() < Date.now()) return null;
   return checkout;
+}
+
+async function findOrderById(orderId: string): Promise<StoredOrder | null> {
+  if (isDatabaseConfigured()) {
+    return dbFindOrderByIdOrNumber(orderId);
+  }
+  const store = await mutateStore((s) => s);
+  return store.orders.find((o) => o.id === orderId || o.orderNumber === orderId) ?? null;
+}
+
+async function persistOrder(order: StoredOrder): Promise<void> {
+  if (isDatabaseConfigured()) {
+    await dbInsertOrder(order);
+    return;
+  }
+  await mutateStore((store) => {
+    store.orders.push(order);
+  });
+}
+
+async function saveOrderPayment(order: StoredOrder): Promise<void> {
+  if (isDatabaseConfigured()) {
+    await dbUpdateOrderPayment(order);
+    return;
+  }
+  await mutateStore((store) => {
+    const idx = store.orders.findIndex((o) => o.id === order.id);
+    if (idx !== -1) store.orders[idx] = order;
+  });
+}
+
+async function buildReservedOrder(
+  checkout: CheckoutToken,
+  input: {
+    paymentMethod: "razorpay" | "cod";
+    shippingAddress: StoredOrder["shippingAddress"];
+    userId: string;
+    guestName?: string;
+    guestPhone?: string;
+    guestEmail?: string;
+    pincode: string;
+  }
+): Promise<StoredOrder> {
+  const pinCheck = checkPincode(input.pincode);
+  if (!pinCheck.serviceable) {
+    throw new Error(pinCheck.message);
+  }
+
+  const { createShipment } = await import("@/lib/logistics");
+
+  if (isDatabaseConfigured()) {
+    const { orderNumber, invoiceNumber } = await dbNextOrderAndInvoiceNumbers();
+    const shipment = createShipment(
+      orderNumber,
+      input.pincode,
+      pinCheck.city ?? input.shippingAddress.city
+    );
+
+    return {
+      id: `ord_${crypto.randomUUID()}`,
+      orderNumber,
+      userId: input.userId,
+      guestPhone: input.guestPhone ?? checkout.guestPhone,
+      guestEmail: input.guestEmail ?? null,
+      guestName: input.guestName ?? null,
+      items: checkout.items,
+      subtotal: checkout.subtotal,
+      promoCode: checkout.promoCode,
+      promoDiscount: checkout.promoDiscount,
+      shipping: checkout.shipping,
+      tax: checkout.tax,
+      cgst: checkout.cgst,
+      sgst: checkout.sgst,
+      igst: checkout.igst,
+      total: checkout.total,
+      paymentMethod: input.paymentMethod,
+      paymentStatus: "pending",
+      paymentId: null,
+      razorpayOrderId: null,
+      status: "pending",
+      shippingAddress: input.shippingAddress,
+      gstin: checkout.gstin,
+      invoiceNumber,
+      pincode: input.pincode,
+      shipment,
+      returnRequest: null,
+      createdAt: new Date().toISOString(),
+    };
+  }
+
+  return mutateStore((store) => {
+    const orderNumber = nextOrderNumber(store);
+    const invoiceNumber = nextInvoiceNumber(store);
+    const shipment = createShipment(
+      orderNumber,
+      input.pincode,
+      pinCheck.city ?? input.shippingAddress.city
+    );
+
+    const order: StoredOrder = {
+      id: `ord_${crypto.randomUUID()}`,
+      orderNumber,
+      userId: input.userId,
+      guestPhone: input.guestPhone ?? checkout.guestPhone,
+      guestEmail: input.guestEmail ?? null,
+      guestName: input.guestName ?? null,
+      items: checkout.items,
+      subtotal: checkout.subtotal,
+      promoCode: checkout.promoCode,
+      promoDiscount: checkout.promoDiscount,
+      shipping: checkout.shipping,
+      tax: checkout.tax,
+      cgst: checkout.cgst,
+      sgst: checkout.sgst,
+      igst: checkout.igst,
+      total: checkout.total,
+      paymentMethod: input.paymentMethod,
+      paymentStatus: "pending",
+      paymentId: null,
+      razorpayOrderId: null,
+      status: "pending",
+      shippingAddress: input.shippingAddress,
+      gstin: checkout.gstin,
+      invoiceNumber,
+      pincode: input.pincode,
+      shipment,
+      returnRequest: null,
+      createdAt: new Date().toISOString(),
+    };
+
+    store.orders.push(order);
+    return order;
+  });
+}
+
+/** Create a pending order in history before payment is attempted. */
+export async function reserveOrderFromCheckout(input: {
+  checkoutToken: string;
+  paymentMethod: "razorpay" | "cod";
+  shippingAddress: StoredOrder["shippingAddress"];
+  userId: string;
+  guestName?: string;
+  guestPhone?: string;
+  guestEmail?: string;
+  pincode: string;
+}): Promise<StoredOrder | { error: string }> {
+  const checkout = await consumeCheckoutToken(input.checkoutToken);
+  if (!checkout) return { error: "Checkout session expired. Please try again." };
+
+  try {
+    const order = await buildReservedOrder(checkout, input);
+    if (isDatabaseConfigured()) {
+      await persistOrder(order);
+    }
+    return order;
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Could not reserve order." };
+  }
+}
+
+export async function completeOrderPayment(input: {
+  orderId: string;
+  userId: string;
+  paymentMethod: "razorpay" | "cod";
+  paymentId?: string;
+  razorpayOrderId?: string;
+  razorpaySignature?: string;
+}): Promise<StoredOrder | { error: string }> {
+  const order = await findOrderById(input.orderId);
+  if (!order || order.userId !== input.userId) {
+    return { error: "Order not found." };
+  }
+
+  if (order.paymentStatus === "paid") {
+    return order;
+  }
+
+  if (order.paymentStatus === "failed") {
+    return { error: "This order failed payment. Please place a new order." };
+  }
+
+  if (input.paymentMethod === "razorpay") {
+    const { paymentId, razorpayOrderId, razorpaySignature } = input;
+    if (!paymentId || !razorpayOrderId || !razorpaySignature) {
+      return { error: "Payment verification is required." };
+    }
+    if (!verifyRazorpaySignature(razorpayOrderId, paymentId, razorpaySignature)) {
+      return { error: "Invalid payment signature." };
+    }
+    order.paymentId = paymentId;
+    order.razorpayOrderId = razorpayOrderId;
+    order.paymentStatus = "paid";
+    order.status = "paid";
+  } else {
+    order.paymentMethod = "cod";
+    order.paymentStatus = "pending";
+    order.status = "pending";
+  }
+
+  await saveOrderPayment(order);
+  return order;
+}
+
+export async function failOrderPayment(input: {
+  orderId: string;
+  userId: string;
+  reason?: string;
+}): Promise<StoredOrder | { error: string }> {
+  const order = await findOrderById(input.orderId);
+  if (!order || order.userId !== input.userId) {
+    return { error: "Order not found." };
+  }
+
+  if (order.paymentStatus === "paid") {
+    return order;
+  }
+
+  order.paymentStatus = "failed";
+  order.status = "cancelled";
+  await saveOrderPayment(order);
+  return order;
 }
 
 export async function createOrderFromCheckout(input: {

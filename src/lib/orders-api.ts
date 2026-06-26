@@ -8,7 +8,15 @@ export async function fetchOrdersFromApi(): Promise<Order[]> {
     const res = await apiFetch("/api/orders");
     if (!res.ok) return [];
     const data = await res.json();
-    return (data.orders as StoredOrder[]).map(serverOrderToClient);
+    const orders: Order[] = [];
+    for (const raw of (data.orders as StoredOrder[]) ?? []) {
+      try {
+        orders.push(serverOrderToClient(raw));
+      } catch {
+        /* skip malformed legacy row */
+      }
+    }
+    return orders;
   } catch {
     return [];
   }

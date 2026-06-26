@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/server/auth";
-import { createOrderFromCheckout } from "@/lib/server/checkout";
+import { completeOrderPayment, createOrderFromCheckout } from "@/lib/server/checkout";
 import { isDatabaseConfigured } from "@/lib/server/db";
 import { dbFindOrdersByUserId } from "@/lib/server/supabase-store";
 import { mutateStore, StoredOrder } from "@/lib/server/store";
@@ -9,6 +9,7 @@ import { SavedAddress } from "@/lib/types";
 
 export async function POST(request: Request) {
   let body: {
+    orderId?: string;
     checkoutToken?: string;
     paymentMethod?: "razorpay" | "cod";
     shippingAddress?: SavedAddress;
@@ -27,12 +28,31 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid request" }, { status: 400 });
   }
 
-  if (!body.checkoutToken || !body.shippingAddress || !body.pincode) {
-    return NextResponse.json({ error: "Missing checkout details." }, { status: 400 });
+  const sessionUser = await getSessionUser();
+  if (!sessionUser) {
+    return NextResponse.json({ error: "Sign in required." }, { status: 401 });
   }
 
   const paymentMethod = body.paymentMethod ?? "razorpay";
-  const sessionUser = await getSessionUser();
+
+  if (body.orderId) {
+    const result = await completeOrderPayment({
+      orderId: body.orderId,
+      userId: sessionUser.id,
+      paymentMethod,
+      paymentId: body.paymentId,
+      razorpayOrderId: body.razorpayOrderId,
+      razorpaySignature: body.razorpaySignature,
+    });
+    if ("error" in result) {
+      return NextResponse.json({ error: result.error }, { status: 400 });
+    }
+    return NextResponse.json({ order: result });
+  }
+
+  if (!body.checkoutToken || !body.shippingAddress || !body.pincode) {
+    return NextResponse.json({ error: "Missing checkout details." }, { status: 400 });
+  }
 
   if (paymentMethod === "razorpay") {
     const { paymentId, razorpayOrderId, razorpaySignature } = body;
@@ -48,7 +68,7 @@ export async function POST(request: Request) {
     checkoutToken: body.checkoutToken,
     paymentMethod,
     shippingAddress: body.shippingAddress,
-    userId: sessionUser?.id ?? null,
+    userId: sessionUser.id,
     guestName: body.guestName,
     guestPhone: body.guestPhone,
     guestEmail: body.guestEmail,

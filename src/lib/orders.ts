@@ -41,6 +41,7 @@ export interface StoredOrder extends Order {
   shippingPhone?: string;
   address?: string;
   city?: string;
+  paymentStatus?: "pending" | "paid" | "failed" | "refunded";
   status: OrderStatus;
   returnRequest?: ReturnRequest;
 }
@@ -68,6 +69,20 @@ export function returnReasonLabel(reason: ReturnReason): string {
 
 export function isCodOrder(order: Pick<StoredOrder, "paymentMethod">): boolean {
   return order.paymentMethod === "cod";
+}
+
+export function isPaymentFailed(order: Pick<StoredOrder, "paymentStatus">): boolean {
+  return order.paymentStatus === "failed";
+}
+
+export function displayOrderStatus(order: StoredOrder): string {
+  if (isPaymentFailed(order)) return "Payment failed";
+  return statusHeadline(resolveOrderStatus(order), order.paymentMethod);
+}
+
+export function displayOrderStatusTone(order: StoredOrder): string {
+  if (isPaymentFailed(order)) return "bg-red-50 text-red-800";
+  return statusTone(resolveOrderStatus(order));
 }
 
 export function paymentMethodLabel(order: Pick<StoredOrder, "paymentMethod">): string {
@@ -107,6 +122,7 @@ function daysSince(iso: string): number {
 
 /** Demo progression: newer orders advance through shipping stages over time. */
 export function resolveOrderStatus(order: StoredOrder): OrderStatus {
+  if (order.paymentStatus === "failed") return "cancelled";
   if (order.returnRequest?.status === "refunded") return "refunded";
   if (order.returnRequest) return "return_requested";
   if (order.status === "cancelled") return "cancelled";

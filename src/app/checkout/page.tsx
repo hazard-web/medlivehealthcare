@@ -61,6 +61,7 @@ export default function CheckoutPage() {
   const [redirecting, setRedirecting] = useState(false);
   const [selectedLineIds, setSelectedLineIds] = useState<Set<string> | null>(null);
   const [orderLineIds, setOrderLineIds] = useState<string[]>([]);
+  const [pendingOrderId, setPendingOrderId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!cartReady || items.length === 0) return;
@@ -112,6 +113,7 @@ export default function CheckoutPage() {
     });
     setCheckoutToken(null);
     setValidatedTotal(null);
+    setPendingOrderId(null);
     setStep("shipping");
   };
 
@@ -121,6 +123,7 @@ export default function CheckoutPage() {
     setSelectedLineIds(allSelected ? new Set() : new Set(items.map((i) => i.lineId)));
     setCheckoutToken(null);
     setValidatedTotal(null);
+    setPendingOrderId(null);
     setStep("shipping");
   };
 
@@ -201,30 +204,25 @@ export default function CheckoutPage() {
     return data;
   };
 
-  const placeOrder = async (input: {
+  const completeOrder = async (input: {
     paymentMethod: PaymentMethod;
     paymentId?: string;
     razorpayOrderId?: string;
     razorpaySignature?: string;
   }) => {
-    const shippingForm = shipping;
-    if (!shippingForm || !checkoutToken) {
-      throw new Error("Checkout session expired");
+    if (!pendingOrderId) {
+      throw new Error("Order is still being prepared. Please wait a moment.");
     }
 
-    const addressSnapshot = formToSavedAddress(shippingForm, { isDefault: false });
-
-    const res = await apiFetch("/api/orders", {
-      method: "POST",
+    const res = await apiFetch(`/api/orders/${pendingOrderId}/payment`, {
+      method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        checkoutToken,
+        action: "complete",
         paymentMethod: input.paymentMethod,
-        shippingAddress: addressSnapshot,
         paymentId: input.paymentId,
         razorpayOrderId: input.razorpayOrderId,
         razorpaySignature: input.razorpaySignature,
-        pincode: shippingForm.pincode,
       }),
     });
 
@@ -233,7 +231,25 @@ export default function CheckoutPage() {
 
     sessionStorage.removeItem("medlive_checkout_shipping");
     removeItems(orderLineIds.length > 0 ? orderLineIds : [...selectedLineIds]);
-    router.push(`/checkout/success?order=${data.order.id}`);
+    router.push(
+      `/checkout/success?order=${data.order.id}&method=${input.paymentMethod}`
+    );
+  };
+
+  const reportPaymentFailure = async (reason: string) => {
+    if (!pendingOrderId) return;
+    try {
+      await apiFetch(`/api/orders/${pendingOrderId}/payment`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "fail", reason }),
+      });
+    } catch {
+      /* best effort */
+    }
+    setShippingError(
+      `${reason} The order is saved in your order history — you can try checkout again with a new payment.`
+    );
   };
 
   const handleShippingSubmit = async (
@@ -255,10 +271,30 @@ export default function CheckoutPage() {
 
     setPincode(form.pincode);
     setShippingSubmitting(true);
+    setPendingOrderId(null);
 
     try {
       const validated = await validateCheckout(form, options);
-      setCheckoutToken(validated.token);
+      const addressSnapshot = formToSavedAddress(form, { isDefault: false });
+
+      const reserveRes = await apiFetch("/api/orders/reserve", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          checkoutToken: validated.token,
+          paymentMethod,
+          shippingAddress: addressSnapshot,
+          pincode: form.pincode,
+        }),
+      });
+      const reserveData = await parseApiJson<{ error?: string; order: { id: string } }>(
+        reserveRes
+      );
+      if (!reserveRes.ok) {
+        throw new Error(reserveData.error || "Could not prepare order for payment");
+      }
+
+      setPendingOrderId(reserveData.order.id);
       setValidatedTotal(validated.total);
       setOrderLineIds(selectedItems.map((i) => i.lineId));
       if (validated.user) {
@@ -268,6 +304,7 @@ export default function CheckoutPage() {
       setShipping(form);
       setPaymentReceipt(`ml_${Date.now()}`);
       sessionStorage.setItem("medlive_checkout_shipping", JSON.stringify(form));
+      setCheckoutToken(null);
       setStep("payment");
     } catch (err) {
       setShippingError(err instanceof Error ? err.message : "Could not validate order");
@@ -280,7 +317,7 @@ export default function CheckoutPage() {
     setShippingError(null);
     setPlacingCod(true);
     try {
-      await placeOrder({ paymentMethod: "cod" });
+      await completeOrder({ paymentMethod: "cod" });
     } catch (err) {
       setShippingError(err instanceof Error ? err.message : "Could not place COD order");
       setPlacingCod(false);
@@ -292,15 +329,20 @@ export default function CheckoutPage() {
     razorpayOrderId: string,
     razorpaySignature: string
   ) => {
+    setShippingError(null);
     try {
-      await placeOrder({
+      await completeOrder({
         paymentMethod: "razorpay",
         paymentId,
         razorpayOrderId,
         razorpaySignature,
       });
     } catch (err) {
-      setShippingError(err instanceof Error ? err.message : "Order could not be saved");
+      setShippingError(
+        err instanceof Error
+          ? `${err.message} If money was deducted, contact support with your payment ID.`
+          : "Order could not be saved after payment."
+      );
     }
   };
 
@@ -374,7 +416,10 @@ export default function CheckoutPage() {
             <div>
               <button
                 type="button"
-                onClick={() => setStep("shipping")}
+                onClick={() => {
+                  setStep("shipping");
+                  setPendingOrderId(null);
+                }}
                 className="mb-4 text-sm font-semibold text-primary-600 hover:text-primary-700"
               >
                 ← Edit shipping address
@@ -423,17 +468,18 @@ export default function CheckoutPage() {
                 <p className="mb-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{shippingError}</p>
               )}
 
-              {paymentMethod === "razorpay" && paymentReceipt && checkoutToken ? (
+              {paymentMethod === "razorpay" && pendingOrderId && paymentReceipt ? (
                 <RazorpayPayment
                   amount={displayTotal}
-                  checkoutToken={checkoutToken}
+                  medliveOrderId={pendingOrderId}
                   userName={shipping?.fullName || user.name}
                   userEmail={user.email}
                   userPhone={shipping?.phone || user.phone}
                   receipt={paymentReceipt}
                   onSuccess={handlePaymentSuccess}
+                  onFailure={reportPaymentFailure}
                 />
-              ) : (
+              ) : paymentMethod === "cod" ? (
                 <div className="card p-6">
                   <h3 className="text-lg font-semibold text-slate-900">Cash on Delivery</h3>
                   <p className="mt-2 text-sm text-slate-500">
@@ -442,7 +488,7 @@ export default function CheckoutPage() {
                   <button
                     type="button"
                     onClick={handleCodPlace}
-                    disabled={placingCod || !checkoutToken}
+                    disabled={placingCod || !pendingOrderId}
                     className="btn-primary mt-6 w-full py-4 disabled:opacity-60"
                   >
                     {placingCod ? (
@@ -455,7 +501,7 @@ export default function CheckoutPage() {
                     )}
                   </button>
                 </div>
-              )}
+              ) : null}
             </div>
           )}
         </div>

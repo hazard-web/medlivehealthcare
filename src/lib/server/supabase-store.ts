@@ -1,4 +1,5 @@
 import { normalizeSavedAddresses } from "@/lib/addresses";
+import { normalizeJsonb, normalizeJsonbArray } from "@/lib/jsonb";
 import { SavedAddress } from "@/lib/types";
 import { getSql } from "./db";
 import type {
@@ -7,6 +8,7 @@ import type {
   OtpRecord,
   PasswordResetToken,
   StoredOrder,
+  StoredOrderItem,
   StoredSession,
   StoredUser,
 } from "./store";
@@ -174,7 +176,7 @@ function rowToOrder(row: OrderRow): StoredOrder {
     guestPhone: row.guest_phone,
     guestEmail: row.guest_email,
     guestName: row.guest_name,
-    items: row.items,
+    items: normalizeJsonbArray<StoredOrderItem>(row.items),
     subtotal: Number(row.subtotal),
     promoCode: row.promo_code,
     promoDiscount: Number(row.promo_discount),
@@ -189,12 +191,23 @@ function rowToOrder(row: OrderRow): StoredOrder {
     paymentId: row.payment_id,
     razorpayOrderId: row.razorpay_order_id,
     status: row.status,
-    shippingAddress: row.shipping_address,
+    shippingAddress: normalizeJsonb<SavedAddress>(row.shipping_address, {
+      id: "legacy",
+      label: "Home",
+      fullName: "",
+      phone: "",
+      flatHouse: "",
+      street: "",
+      area: "",
+      city: "",
+      state: "",
+      pincode: "",
+    }),
     gstin: row.gstin,
     invoiceNumber: row.invoice_number,
     pincode: row.pincode,
-    shipment: row.shipment,
-    returnRequest: row.return_request,
+    shipment: row.shipment ? normalizeJsonb(row.shipment, null) : null,
+    returnRequest: row.return_request ? normalizeJsonb(row.return_request, null) : null,
     createdAt: row.created_at,
   };
 }
@@ -225,7 +238,7 @@ function rowToCheckout(row: CheckoutRow): CheckoutToken {
     token: row.token,
     userId: row.user_id,
     guestPhone: row.guest_phone,
-    items: row.items,
+    items: normalizeJsonbArray<StoredOrderItem>(row.items),
     subtotal: Number(row.subtotal),
     promoCode: row.promo_code,
     promoDiscount: Number(row.promo_discount),
@@ -590,13 +603,13 @@ export async function dbInsertOrder(order: StoredOrder): Promise<void> {
       shipping_address, gstin, invoice_number, pincode, shipment, return_request, created_at
     ) values (
       ${order.id}, ${order.orderNumber}, ${order.userId}, ${order.guestPhone}, ${order.guestEmail},
-      ${order.guestName}, ${sql.json(order.items as never)}, ${order.subtotal}, ${order.promoCode},
+      ${order.guestName}, ${sql.json(normalizeJsonbArray(order.items) as never)}, ${order.subtotal}, ${order.promoCode},
       ${order.promoDiscount}, ${order.shipping}, ${order.tax}, ${order.cgst}, ${order.sgst},
       ${order.igst}, ${order.total}, ${order.paymentMethod}, ${order.paymentStatus},
       ${order.paymentId}, ${order.razorpayOrderId}, ${order.status},
-      ${sql.json(order.shippingAddress as never)}, ${order.gstin}, ${order.invoiceNumber},
-      ${order.pincode}, ${sql.json(order.shipment as never)},
-      ${sql.json(order.returnRequest as never)}, ${order.createdAt}
+      ${sql.json(normalizeJsonb(order.shippingAddress, {}) as never)}, ${order.gstin}, ${order.invoiceNumber},
+      ${order.pincode}, ${sql.json(normalizeJsonb(order.shipment, null) as never)},
+      ${sql.json(normalizeJsonb(order.returnRequest, null) as never)}, ${order.createdAt}
     )
   `;
 }
@@ -607,6 +620,19 @@ export async function dbUpdateOrder(order: StoredOrder): Promise<void> {
     update orders set
       status = ${order.status},
       return_request = ${sql.json(order.returnRequest as never)}
+    where id = ${order.id}
+  `;
+}
+
+export async function dbUpdateOrderPayment(order: StoredOrder): Promise<void> {
+  const sql = getSql();
+  await sql`
+    update orders set
+      status = ${order.status},
+      payment_status = ${order.paymentStatus},
+      payment_method = ${order.paymentMethod},
+      payment_id = ${order.paymentId},
+      razorpay_order_id = ${order.razorpayOrderId}
     where id = ${order.id}
   `;
 }

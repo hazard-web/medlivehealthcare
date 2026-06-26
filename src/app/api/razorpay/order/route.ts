@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { createRazorpayClient, getRazorpayConfig, razorpayErrorMessage, sanitizeReceipt } from "@/lib/razorpay";
 import { getCheckoutToken } from "@/lib/server/checkout";
+import { isDatabaseConfigured } from "@/lib/server/db";
+import { dbFindOrderByIdOrNumber } from "@/lib/server/supabase-store";
+import { mutateStore } from "@/lib/server/store";
 
 export async function POST(request: Request) {
   const config = getRazorpayConfig();
@@ -16,6 +19,7 @@ export async function POST(request: Request) {
     receipt?: string;
     notes?: Record<string, string>;
     checkoutToken?: string;
+    medliveOrderId?: string;
   };
   try {
     body = await request.json();
@@ -24,7 +28,17 @@ export async function POST(request: Request) {
   }
 
   let amount = body.amount;
-  if (body.checkoutToken) {
+  if (body.medliveOrderId) {
+    const order = isDatabaseConfigured()
+      ? await dbFindOrderByIdOrNumber(body.medliveOrderId)
+      : (await mutateStore((s) => s)).orders.find(
+          (o) => o.id === body.medliveOrderId || o.orderNumber === body.medliveOrderId
+        );
+    if (!order) {
+      return NextResponse.json({ error: "Order not found. Please refresh checkout." }, { status: 400 });
+    }
+    amount = order.total;
+  } else if (body.checkoutToken) {
     const checkout = await getCheckoutToken(body.checkoutToken);
     if (!checkout) {
       return NextResponse.json({ error: "Checkout session expired. Please try again." }, { status: 400 });
@@ -49,6 +63,7 @@ export async function POST(request: Request) {
       notes: {
         ...body.notes,
         checkoutToken: body.checkoutToken ?? "",
+        medliveOrderId: body.medliveOrderId ?? "",
       },
     });
 
