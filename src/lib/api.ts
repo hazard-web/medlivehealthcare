@@ -10,6 +10,22 @@ export function apiUrl(path: string): string {
   return base ? `${base}${normalized}` : normalized;
 }
 
+export async function parseApiJson<T = unknown>(res: Response): Promise<T> {
+  const text = await res.text();
+  if (!text) {
+    throw new Error(
+      res.ok
+        ? "Empty response from server."
+        : `Server error (${res.status}). Check backend logs or database setup.`
+    );
+  }
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new Error(`Invalid server response (${res.status}).`);
+  }
+}
+
 export function apiFetch(path: string, init?: RequestInit): Promise<Response> {
   return fetch(apiUrl(path), {
     credentials: "include",
