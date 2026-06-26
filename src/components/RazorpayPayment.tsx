@@ -225,7 +225,7 @@ export default function RazorpayPayment({
       </button>
 
       <p className="mt-4 text-center text-xs text-slate-400">
-        Secured by Razorpay · 256-bit encryption
+        Secured by Razorpay
       </p>
     </div>
   );
